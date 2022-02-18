@@ -6,9 +6,13 @@ import sys
 
 # Colors
 class Color:
-    WHITE = (255,255,255)
-    BLACK = ( 0 , 0 , 0 )
-    BLUE  = ( 0 , 0 ,255)
+    WHITE  = (255,255,255)
+    BLACK  = ( 0 , 0 , 0 )
+
+    RED    = (255, 0 , 0 )
+    GREEN  = ( 0 ,255, 0 )
+    BLUE   = ( 0 , 0 ,255)
+    YELLOW = (255,255, 0 )
 
 """
     Simple class representing a 2D vector like position and velocity.
@@ -20,6 +24,18 @@ class Vector():
 
     def as_tuple(self):
         return (self.x, self.y)
+
+    def __mul__(self, other):
+        if type(other) in [int, float]:
+            return Vector(self.x * other, self.y * other)
+        else:
+            raise Exception("Multiplication with Vector and that not defined.")
+
+    def __add__(self, other):
+        if type(other) is Vector:
+            return Vector(self.x + other.x, self.y + other.y)
+        else:
+            raise Exception("Addition with Vector and that not defined.")
 
 
 class EventActions:
@@ -96,7 +112,8 @@ class Game:
 
         # World settings
         self.ground = None
-        self.objects = []
+        self.objects = {}
+        self._pending_delete = []
 
         self.last_loop_time = self.fps
 
@@ -161,7 +178,10 @@ class Game:
         """
             This is called once per frame. Takes care of updating the simple "physics".
         """
-        for obj in self.objects:
+        # first, delete objects that were marked to be deleted last loop
+        self.delete_pending_objects()
+
+        for label, obj in self.objects.items():
             obj.update(self.last_loop_time) # start by calculating the new position
 
             # check ground collisions (you could check other collisions here, too)
@@ -196,9 +216,8 @@ class Game:
         self.scr.fill(self.background_clr)
 
         # draw game objects
-        for obj in self.objects:
+        for label, obj in self.objects.items():
             obj.draw(self.scr)
-
 
         # draw the top layer (e.g. UI elements)
         x,y,m = 0,10,10
@@ -215,11 +234,11 @@ class Game:
         """
             Get an object by label. If not found, None is returned.
         """
-        for obj in self.objects:
-            if obj.label == label:
-                return obj
-        return None
-        
+        try:
+            return self.objects[label]
+        except KeyError:
+            return None
+
 
     def ui_write(self, text_str, x, y):
         """
@@ -250,8 +269,31 @@ class Game:
     def add_obj(self, obj):
         """
             Add a new game object to the game (player, ground, npc's...).
+            Overwrites the old item if there is one with the same label.
         """
-        self.objects.append(obj)
+        self.objects[obj.label] = obj
+
+    def delete_obj(self, obj):
+        """
+            Marks a a game object to be deleted from the game.
+        """
+        self._pending_delete.append(obj.label)
+
+    def delete_pending_objects(self):
+        """
+            Deletes the pending objects and clears the list.
+        """
+        for label in self._pending_delete:
+            del self.objects[label]
+        self._pending_delete = []
+
+    def on_screen(self, obj):
+        """
+            Return true if the object is on the screen.
+            NOTE: Only the object position counts! Not width!
+        """
+        return (0 <= obj.position.x <= self.scr_size[0] and
+                0 <= obj.position.y <= self.scr_size[1])
 
     def actual_fps(self):
         return round(1/self.last_loop_time, 2)

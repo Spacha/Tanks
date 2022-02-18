@@ -1,12 +1,12 @@
 from enum import Enum, auto
-from math import sin, cos, radians
+from math import sin, cos, radians, ceil
 from PIL import Image
 import pygame as pg
 import numpy as np
 import time
 import sys
 
-from GameEngine.Core import Game, GameObject, Color as CLR
+from GameEngine.Core import Game, GameObject, Color as CLR, Vector
 
 class GameStates(Enum):
     MAIN_MENU = auto()
@@ -36,6 +36,8 @@ class Player(GameObject):
         self.barrel_movement     = 0
         self.max_barrel_movement = radians(90) # 1 deg per frame
 
+        self.projectile_velocity = 50.0
+
         self.max_velocity = 100.0
         self.jump_strength = 150.0
 
@@ -57,12 +59,8 @@ class Player(GameObject):
             game object (rectangle, sprite, ball...).
         """
 
-        # draw the barrel
-        startpos = (int(self.position.x + self.width / 2), self.position.y)
-        endpos   = (int(startpos[0] + self.direction * self.barrel_length * cos(self.barrel_angle)),
-                    int(startpos[1] - self.barrel_length * sin(self.barrel_angle)))
-        
-        pg.draw.line(scr, CLR.WHITE, startpos, endpos, 2)
+        # draw the barrel and tank
+        pg.draw.line(scr, CLR.WHITE, self.barrel_start(), self.barrel_end(), 2)
         pg.draw.rect(scr, self.color, self.rect())
 
     def rect(self):
@@ -70,6 +68,18 @@ class Player(GameObject):
             Return the pgame Rect object for the object.
         """
         return pg.Rect(self.position.x, self.position.y, self.width, self.height)
+
+    def barrel_vector(self):
+        return Vector(
+            self.direction * self.barrel_length * cos(self.barrel_angle),
+            -self.barrel_length * sin(self.barrel_angle)
+        )
+    def barrel_start(self):
+        return (self.position.x + self.width / 2, self.position.y)
+    def barrel_end(self):
+        barrel_vect = self.barrel_vector()
+        startpos = self.barrel_start()
+        return (startpos[0] + barrel_vect.x, startpos[1] + barrel_vect.y)
 
     def update(self, delta):
         super().update(delta)
@@ -98,11 +108,53 @@ class Player(GameObject):
     def aim_down(self, aim = True):
         self.barrel_movement += (-1 if aim else 1) * self.max_barrel_movement
 
+    def shoot(self):
+        projectile = Projectile(*self.barrel_end())
+        projectile.velocity = self.velocity + self.barrel_vector() * self.projectile_velocity
+        game.add_obj(projectile)
+
     def jump(self):
         # player can only jump if it's on the ground
         if self.on_ground:
             self.velocity.y = -self.jump_strength
 
+"""
+    This is a game object that is meant to be controlled by the user.
+"""
+class Projectile(GameObject):
+    def __init__(self, x, y, ammo_type = None):
+        # construct the parent
+        GameObject.__init__(self, 'Projectile') # TODO: Not unique!
+
+        self.ammo_type = ammo_type
+        self.position.x = x
+        self.position.y = y
+
+        self.width = 6
+        self.height = 6
+        self.radius = ceil(self.width / 2)
+        self.color = CLR.YELLOW
+
+
+    def draw(self, scr):
+        """
+            Draw the object. This is different for each
+            game object (rectangle, sprite, ball...).
+        """
+        pg.draw.circle(scr, self.color, self.position.as_tuple(), self.radius)
+
+    def update(self, delta):
+        super().update(delta)
+        # check if can collide / otherwise explode
+        
+        # destroy if out of bounds
+        # TODO: Maybe don't count over-the top?
+        if not game.on_screen(self):
+            print("Imma stop existing!")
+            game.delete_obj(self)
+    
+    def explode(self):
+        pass
 
 """
     This is a game object that is meant to be the ground. It's static so
@@ -218,6 +270,7 @@ game.key_actions.up( pg.K_UP,      lambda: player.aim_up(False) )
 game.key_actions.down( pg.K_DOWN,  lambda: player.aim_down(True) )
 game.key_actions.up( pg.K_DOWN,    lambda: player.aim_down(False) )
 
+game.key_actions.down( pg.K_x,     lambda: player.shoot() )
 game.key_actions.down( pg.K_SPACE, lambda: player.jump() )
 
 while game.running:
