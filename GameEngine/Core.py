@@ -80,7 +80,7 @@ class Game:
     def __init__(self, scr_size, fps):
         self.scr_size = scr_size
         self.fps = fps
-        self.gravity = 0.3
+        self.gravity = 4.0
 
         # Init pygame
         pg.init()
@@ -162,7 +162,7 @@ class Game:
             This is called once per frame. Takes care of updating the simple "physics".
         """
         for obj in self.objects:
-            obj.update() # start by calculating the new position
+            obj.update(self.last_loop_time) # start by calculating the new position
 
             # check ground collisions (you could check other collisions here, too)
             if not obj.static:
@@ -295,8 +295,8 @@ class Game:
 """
 class GameObject():
     def __init__(self, label, static=False):
-        self.position = Vector(0, 0)
-        self.velocity = Vector(0, 0)
+        self.position = Vector(0.0, 0.0)
+        self.velocity = Vector(0.0, 0.0)
         self.label = label
         self.static = static
 
@@ -306,14 +306,16 @@ class GameObject():
         self.on_ground = False
         self.debug = False
 
-    def update(self):
+    def update(self, delta):
         """
             The game calls this method. This takes care of updating
             all the game-object-specific physics.
+            Last frame time is given in @delta and must
+            be used in physics calculations.
         """
         if not self.static:
-            self.position.x = round(self.position.x + self.velocity.x)
-            self.position.y = round(self.position.y + self.velocity.y)
+            self.position.x = self.position.x + self.velocity.x * delta
+            self.position.y = self.position.y + self.velocity.y * delta
 
     def bottom(self):
         """

@@ -34,10 +34,10 @@ class Player(GameObject):
         self.max_barrel_angle    = radians(85)
         self.barrel_angle        = radians(0)
         self.barrel_movement     = 0
-        self.max_barrel_movement = radians(1) # 1 deg per frame
+        self.max_barrel_movement = radians(90) # 1 deg per frame
 
-        self.max_velocity = 2.5
-        self.jump_strength = 5.0
+        self.max_velocity = 100.0
+        self.jump_strength = 150.0
 
         self.height = height
         self.width = width
@@ -71,9 +71,9 @@ class Player(GameObject):
         """
         return pg.Rect(self.position.x, self.position.y, self.width, self.height)
 
-    def update(self):
-        super().update()
-        self.barrel_angle += self.barrel_movement
+    def update(self, delta):
+        super().update(delta)
+        self.barrel_angle += self.barrel_movement * delta
 
         # limit movement
         if self.barrel_angle < self.min_barrel_angle:
@@ -140,7 +140,7 @@ class Ground(GameObject):
                 2. The corresponding height value is available in the height map
                    that is generated during startup.
         """
-        x_idx = x - self.position.x
+        x_idx = round(x - self.position.x)
 
         # object is outside the slope, cannot collide
         if x_idx < 0 or x_idx > (len(self.height_map) - 1):
@@ -190,7 +190,7 @@ class Ground(GameObject):
 # -------------------------------
 #         INIT THE GAME
 # -------------------------------
-FPS = 60.0
+FPS = 100.0
 SCR_SIZE = (900, 750)
 
 game = Tanks(SCR_SIZE, FPS)
