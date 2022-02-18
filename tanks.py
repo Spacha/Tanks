@@ -175,12 +175,19 @@ class ExplosiveProjectile(Projectile):
 class Particle(GameObject):
     def __init__(self):
         super().__init__(self)
-        self.lifetime = 1.0 # in seconds
+        self.lifetime = 0 # in seconds
         self.creation_time = game.get_ticks()
+        self.frame = 0
+        self.max_frames = 0
+    def update(self, delta):
+        self.frame += 1
     def draw(self, scr):
         pass
+    def start_life(self):
+        # lifetime in frames
+        self.max_frames = self.lifetime * game.fps
     def has_life_ended(self):
-        return (game.get_ticks() - self.creation_time) >= self.lifetime
+        return self.frame >= self.max_frames
 
 class ExplosionParticle(Particle):
     def __init__(self, x, y):
@@ -190,15 +197,15 @@ class ExplosionParticle(Particle):
         self.lifetime = 1.25
 
         # initial parameters
-        self.frame = 0
         self.color = (255,255,255)
         self.radius = 0.0
-        # lifetime in frames
-        self.max_frames = self.lifetime * game.fps
+        
+        self.start_life()
 
     def update(self, delta):
+        super().update(delta)
         # self.radius += 60 * delta   # make the radius grow
-        self.radius += 8/(0.1*self.frame**2 + 1)
+        self.radius += 8/(0.1*(4-self.frame)**2 + 1)
         r,g,b = self.color
         b -= 150 * delta            # make the color go from white to yellow
         if b < 0: b = 0

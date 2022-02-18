@@ -99,7 +99,7 @@ class Game:
     def __init__(self, scr_size, fps):
         self.scr_size = scr_size
         self.fps = fps
-        self.gravity = 4.0
+        self.gravity = 1.0
 
         # Init pygame
         pg.init()
