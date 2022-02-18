@@ -29,17 +29,17 @@ class Player(GameObject):
         GameObject.__init__(self, 'Player')
 
         # barrel
-        self.barrel_length       = 10
+        self.barrel_length       = 15
         self.min_barrel_angle    = radians(0)
         self.max_barrel_angle    = radians(85)
         self.barrel_angle        = radians(0)
         self.barrel_movement     = 0
         self.max_barrel_movement = radians(90) # 1 deg per frame
 
-        self.projectile_velocity = 50.0
+        self.firepower = 200.0
+        self.jump_strength = 100.0
 
         self.max_velocity = 100.0
-        self.jump_strength = 150.0
 
         self.height = height
         self.width = width
@@ -110,7 +110,10 @@ class Player(GameObject):
 
     def shoot(self):
         projectile = ExplosiveProjectile(*self.barrel_end())
-        projectile.velocity = self.velocity + self.barrel_vector() * self.projectile_velocity
+        initial_velocity = self.firepower
+        barrel_direction = self.barrel_vector() / self.barrel_length
+        projectile.velocity = self.velocity + barrel_direction * initial_velocity
+        projectile.velocity.y -= game.gravity # ???
         game.add_obj(projectile)
 
     def jump(self):
@@ -303,7 +306,7 @@ class Ground(GameObject):
 #         INIT THE GAME
 # -------------------------------
 FPS = 100.0
-SCR_SIZE = (900, 750)
+SCR_SIZE = (700, 600)
 
 game = Tanks(SCR_SIZE, FPS)
 

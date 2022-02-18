@@ -34,6 +34,12 @@ class Vector():
         else:
             raise Exception("Multiplication with Vector and that not defined.")
 
+    def __truediv__(self, other):
+        if type(other) in [int, float]:
+            return Vector(self.x / other, self.y / other)
+        else:
+            raise Exception("Multiplication with Vector and that not defined.")
+
     def __add__(self, other):
         if type(other) is Vector:
             return Vector(self.x + other.x, self.y + other.y)
@@ -60,7 +66,6 @@ class EventActions:
             try:
                 # call the callback if found
                 self.actions[event.type](event)
-                print(event)
             except KeyError:
                 continue
 
@@ -99,7 +104,7 @@ class Game:
     def __init__(self, scr_size, fps):
         self.scr_size = scr_size
         self.fps = fps
-        self.gravity = 1.0
+        self.gravity = 80.0
 
         # Init pygame
         pg.init()
@@ -116,10 +121,10 @@ class Game:
         # World settings
         self.ground = None
         self.objects = {}
-        self.particle_labels = []
-        self._pending_objects = []
-        self._pending_particles = []
-        self._pending_delete = []
+        self.particle_labels = []       # used to quickly find particles among objects
+        self._pending_objects = []      # objects waiting to be added
+        self._pending_particles = []    # particles waiting to be added
+        self._pending_delete = []       # objects waiting to be deleted
 
         self.last_delta = self.fps
 
@@ -153,26 +158,6 @@ class Game:
         self.actions.register(pg.MOUSEBUTTONDOWN,    self.handle_mousedown)
         self.actions.register(pg.MOUSEBUTTONUP,      self.handle_mouseup)
         self.actions.register(delete_particle_event, self.delete_old_particles)
-        '''
-        if event.type == pg.QUIT:
-            exit = True
-        if event.type == pg.KEYDOWN:
-            # emergency exit
-            if event.key == pg.K_q:
-                exit = True
-            if event.key == pg.K_SPACE:
-                player.jump()
-            if event.key == pg.K_LEFT:
-                player.move_left(True)
-            if event.key == pg.K_RIGHT:
-                player.move_right(True)
-
-        if event.type == pg.KEYUP:
-            if event.key == pg.K_LEFT:
-                player.move_left(False)
-            if event.key == pg.K_RIGHT:
-                player.move_right(False)
-        '''
 
     def handle_events(self):
         """
@@ -214,7 +199,8 @@ class Game:
             if not obj.on_ground:
                 obj.on_ground = True
         else:
-            obj.velocity.y += self.gravity # gravity pulls the object down
+            # gravity pulls the object down
+            obj.velocity.y += (self.gravity * self.last_delta)
 
             # little treshold, objects 1 pixel above ground
             # are still considered to be on the ground
