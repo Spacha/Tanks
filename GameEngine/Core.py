@@ -4,6 +4,9 @@ import numpy as np
 import time
 import sys
 
+# Custom events
+delete_particle_event = pg.USEREVENT + 1
+
 # Colors
 class Color:
     WHITE  = (255,255,255)
@@ -113,9 +116,12 @@ class Game:
         # World settings
         self.ground = None
         self.objects = {}
+        self.particle_labels = []
+        self._pending_objects = []
+        self._pending_particles = []
         self._pending_delete = []
 
-        self.last_loop_time = self.fps
+        self.last_delta = self.fps
 
         # initialize the actual game
         self.register_actions()
@@ -140,12 +146,13 @@ class Game:
                 VIDEOEXPOSE     None
                 USEREVENT       Code
         """
-        self.actions.register(pg.QUIT,              self.exit)
-        self.actions.register(pg.KEYDOWN,           self.handle_keydown)
-        self.actions.register(pg.KEYUP,             self.handle_keyup)
-        self.actions.register(pg.MOUSEMOTION,       self.handle_mousemove)
-        self.actions.register(pg.MOUSEBUTTONDOWN,   self.handle_mousedown)
-        self.actions.register(pg.MOUSEBUTTONUP,     self.handle_mouseup)
+        self.actions.register(pg.QUIT,               self.exit)
+        self.actions.register(pg.KEYDOWN,            self.handle_keydown)
+        self.actions.register(pg.KEYUP,              self.handle_keyup)
+        self.actions.register(pg.MOUSEMOTION,        self.handle_mousemove)
+        self.actions.register(pg.MOUSEBUTTONDOWN,    self.handle_mousedown)
+        self.actions.register(pg.MOUSEBUTTONUP,      self.handle_mouseup)
+        self.actions.register(delete_particle_event, self.delete_old_particles)
         '''
         if event.type == pg.QUIT:
             exit = True
@@ -179,14 +186,18 @@ class Game:
             This is called once per frame. Takes care of updating the simple "physics".
         """
         # first, delete objects that were marked to be deleted last loop
+        self.delete_old_particles(None)
         self.delete_pending_objects()
+        self.add_pending_particles()
+        self.add_pending_objects()
 
         for label, obj in self.objects.items():
-            obj.update(self.last_loop_time) # start by calculating the new position
+            obj.update(self.last_delta) # start by calculating the new position
 
             # check ground collisions (you could check other collisions here, too)
             if not obj.static:
                 self.check_ground(obj)
+
 
     def check_ground(self, obj):
         """
@@ -257,6 +268,19 @@ class Game:
 
     def tick(self):
         self.clock.tick(self.fps)
+        self.last_delta = self.clock.get_time() / 1000.0
+
+    def get_ticks(self):
+        """
+            Returns seconds since game started (pg.init).
+        """
+        return pg.time.get_ticks() / 1000.0
+
+    def time(self):
+        """
+            Returns absolute time in seconds.
+        """
+        return time.time()
 
     def set_ground(self, ground):
         """
@@ -270,8 +294,15 @@ class Game:
         """
             Add a new game object to the game (player, ground, npc's...).
             Overwrites the old item if there is one with the same label.
+            If the object has no label, generates a unique label for it.
         """
-        self.objects[obj.label] = obj
+        if obj.label is None:
+            obj.label = self.generate_label()
+        #self.objects[obj.label] = obj
+        self._pending_objects.append(obj)
+
+    def add_particle(self, particle):
+        self._pending_particles.append(particle)
 
     def delete_obj(self, obj):
         """
@@ -279,13 +310,36 @@ class Game:
         """
         self._pending_delete.append(obj.label)
 
+    def add_pending_objects(self):
+        for obj in self._pending_objects:
+            self.objects[obj.label] = obj
+        self._pending_objects = []
+
+    def add_pending_particles(self):
+        for particle in self._pending_particles:
+            self.add_obj(particle)
+            self.particle_labels.append(particle.label)
+
+            # set a timer to destroy the particle after its lifetime
+            # pg.time.set_timer(delete_particle_event, int(particle.lifetime * 1000))
+        self._pending_particles = []
+
     def delete_pending_objects(self):
         """
             Deletes the pending objects and clears the list.
         """
         for label in self._pending_delete:
-            del self.objects[label]
+            try:
+                del self.objects[label]
+            except KeyError:
+                print("Unkown object to be deleted: ", label)
         self._pending_delete = []
+
+    def generate_label(self):
+        """
+            Generates a unique label.
+        """
+        return "anon-" + str(hash(time.time()))
 
     def on_screen(self, obj):
         """
@@ -296,9 +350,20 @@ class Game:
                 0 <= obj.position.y <= self.scr_size[1])
 
     def actual_fps(self):
-        return round(1/self.last_loop_time, 2)
+        return round(1/self.last_delta, 2)
 
     # Event handlers
+
+    def delete_old_particles(self, event):
+        for label in self.particle_labels:
+            try:
+                obj = self.objects[label]
+            except KeyError:
+                continue
+            if obj.has_life_ended():
+                # Delete label using list comprehension: https://stackoverflow.com/a/5746071
+                self.particles = [p for p in self.particle_labels if not label]
+                self.delete_obj(obj)
 
     def handle_keydown(self, event):
         code = event.unicode
@@ -336,7 +401,7 @@ class Game:
     this as a parent when creating new types of game objects.
 """
 class GameObject():
-    def __init__(self, label, static=False):
+    def __init__(self, label = None, static = False):
         self.position = Vector(0.0, 0.0)
         self.velocity = Vector(0.0, 0.0)
         self.label = label

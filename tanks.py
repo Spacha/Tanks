@@ -1,5 +1,5 @@
 from enum import Enum, auto
-from math import sin, cos, radians, ceil
+from math import sin, cos, radians, ceil, log, exp
 from PIL import Image
 import pygame as pg
 import numpy as np
@@ -109,7 +109,7 @@ class Player(GameObject):
         self.barrel_movement += (-1 if aim else 1) * self.max_barrel_movement
 
     def shoot(self):
-        projectile = Projectile(*self.barrel_end())
+        projectile = ExplosiveProjectile(*self.barrel_end())
         projectile.velocity = self.velocity + self.barrel_vector() * self.projectile_velocity
         game.add_obj(projectile)
 
@@ -124,7 +124,7 @@ class Player(GameObject):
 class Projectile(GameObject):
     def __init__(self, x, y, ammo_type = None):
         # construct the parent
-        GameObject.__init__(self, 'Projectile') # TODO: Not unique!
+        GameObject.__init__(self)
 
         self.ammo_type = ammo_type
         self.position.x = x
@@ -155,6 +155,59 @@ class Projectile(GameObject):
     
     def explode(self):
         pass
+
+class ExplosiveProjectile(Projectile):
+    def __init__(self, x, y):
+        # construct the parent
+        Projectile.__init__(self, x, y, 0)
+
+    def update(self, delta):
+        super().update(delta)
+        # check if can collide / otherwise explode
+        if self.on_ground:
+            self.explode()
+    
+    def explode(self):
+        print("Imma explode!")
+        game.add_particle(ExplosionParticle(self.position.x, self.position.y))
+        game.delete_obj(self)
+
+class Particle(GameObject):
+    def __init__(self):
+        super().__init__(self)
+        self.lifetime = 1.0 # in seconds
+        self.creation_time = game.get_ticks()
+    def draw(self, scr):
+        pass
+    def has_life_ended(self):
+        return (game.get_ticks() - self.creation_time) >= self.lifetime
+
+class ExplosionParticle(Particle):
+    def __init__(self, x, y):
+        super().__init__()
+        self.position.x = x
+        self.position.y = y
+        self.lifetime = 1.25
+
+        # initial parameters
+        self.frame = 0
+        self.color = (255,255,255)
+        self.radius = 0.0
+        # lifetime in frames
+        self.max_frames = self.lifetime * game.fps
+
+    def update(self, delta):
+        # self.radius += 60 * delta   # make the radius grow
+        self.radius += 8/(0.1*self.frame**2 + 1)
+        r,g,b = self.color
+        b -= 150 * delta            # make the color go from white to yellow
+        if b < 0: b = 0
+        self.color = (r, g, b)
+
+        self.frame += 1
+
+    def draw(self, scr):
+        pg.draw.circle(scr, self.color, self.position.as_tuple(), int(self.radius))
 
 """
     This is a game object that is meant to be the ground. It's static so
@@ -274,7 +327,7 @@ game.key_actions.down( pg.K_x,     lambda: player.shoot() )
 game.key_actions.down( pg.K_SPACE, lambda: player.jump() )
 
 while game.running:
-    loop_start_time = time.time()
+    # loop_start_time = time.time()
 
     # -------------------------------
     #         Handle Events
@@ -296,7 +349,7 @@ while game.running:
     pg.display.update()
 
     game.tick()
-    game.last_loop_time = time.time() - loop_start_time
+    # game.last_loop_time = time.time() - loop_start_time
 
 pg.quit()
 sys.exit()
