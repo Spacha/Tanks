@@ -21,24 +21,23 @@ class Tanks(Game):
 
 
 """
-    This is a game object that is meant to be controlled by the user.
+This is a game object that is meant to be controlled by the user.
 """
 class Player(GameObject):
     def __init__(self, x, y, width, height, clr):
         # construct the parent
-        GameObject.__init__(self, 'Player')
+        super().__init__('Player')
 
-        # barrel
+        # Barrel
         self.barrel_length       = 15
         self.min_barrel_angle    = radians(0)
         self.max_barrel_angle    = radians(85)
         self.barrel_angle        = radians(0)
+        self.max_barrel_movement = radians(90)
         self.barrel_movement     = 0
-        self.max_barrel_movement = radians(90) # 1 deg per frame
 
         self.firepower = 200.0
         self.jump_strength = 100.0
-
         self.max_velocity = 100.0
 
         self.height = height
@@ -49,23 +48,17 @@ class Player(GameObject):
         self.position.x = x
         self.position.y = y
 
-        # Instructions
-        self._move_left = False
-        self._move_right = False
-
     def draw(self, scr):
         """
-            Draw the object. This is different for each
-            game object (rectangle, sprite, ball...).
+        Draw the object. This is different for each
+        game object (rectangle, sprite, ball...).
         """
-
-        # draw the barrel and tank
         pg.draw.line(scr, CLR.WHITE, self.barrel_start(), self.barrel_end(), 2)
         pg.draw.rect(scr, self.color, self.rect())
 
     def rect(self):
         """
-            Return the pgame Rect object for the object.
+        Return the pgame Rect object for the object.
         """
         return pg.Rect(self.position.x, self.position.y, self.width, self.height)
 
@@ -74,8 +67,10 @@ class Player(GameObject):
             self.direction * self.barrel_length * cos(self.barrel_angle),
             -self.barrel_length * sin(self.barrel_angle)
         )
+
     def barrel_start(self):
         return (self.position.x + self.width / 2, self.position.y)
+
     def barrel_end(self):
         barrel_vect = self.barrel_vector()
         startpos = self.barrel_start()
@@ -85,15 +80,14 @@ class Player(GameObject):
         super().update(delta)
         self.barrel_angle += self.barrel_movement * delta
 
-        # limit movement
+        # Limit barrel movement
         if self.barrel_angle < self.min_barrel_angle:
             self.barrel_angle = self.min_barrel_angle
         elif self.barrel_angle > self.max_barrel_angle:
             self.barrel_angle = self.max_barrel_angle
 
-
     # Controls
-    # TODO: use setters
+
     def move_left(self, move = True):
         if move: self.direction = -1
         self.velocity.x += (-1 if move else 1) * self.max_velocity
@@ -109,11 +103,16 @@ class Player(GameObject):
         self.barrel_movement += (-1 if aim else 1) * self.max_barrel_movement
 
     def shoot(self):
+        """
+        Spawns a projectile to the end of the barrel
+        and gives it a bit of velocty.
+        """
         projectile = ExplosiveProjectile(*self.barrel_end())
         initial_velocity = self.firepower
         barrel_direction = self.barrel_vector() / self.barrel_length
         projectile.velocity = self.velocity + barrel_direction * initial_velocity
-        projectile.velocity.y -= game.gravity # ???
+        projectile.velocity.y -= game.gravity # ??? what the hell ???
+
         game.add_obj(projectile)
 
     def jump(self):
@@ -122,12 +121,12 @@ class Player(GameObject):
             self.velocity.y = -self.jump_strength
 
 """
-    This is a game object that is meant to be controlled by the user.
+A projectile launched from a tank barrel. This class
+can be inherited to make various different shells.
 """
 class Projectile(GameObject):
     def __init__(self, x, y, ammo_type = None):
-        # construct the parent
-        GameObject.__init__(self)
+        super().__init__()
 
         self.ammo_type = ammo_type
         self.position.x = x
@@ -159,25 +158,32 @@ class Projectile(GameObject):
     def explode(self):
         pass
 
+"""
+A type of projectile that explodes on contact
+to ground or other solid(?) game objects.
+"""
 class ExplosiveProjectile(Projectile):
     def __init__(self, x, y):
-        # construct the parent
-        Projectile.__init__(self, x, y, 0)
+        super().__init__(x, y, 0)
 
     def update(self, delta):
         super().update(delta)
-        # check if can collide / otherwise explode
-        if self.on_ground:
+
+        if self.should_explode():
             self.explode()
+
+    def should_explode(self):
+        return self.on_ground
     
     def explode(self):
         print("Imma explode!")
         game.add_particle(ExplosionParticle(self.position.x, self.position.y))
+        #game.circular_explosion(self.position.x, self.position.y)
         game.delete_obj(self)
 
 class Particle(GameObject):
     def __init__(self):
-        super().__init__(self)
+        super().__init__()
         self.lifetime = 0 # in seconds
         self.creation_time = game.get_ticks()
         self.frame = 0
@@ -210,7 +216,7 @@ class ExplosionParticle(Particle):
         # self.radius += 60 * delta   # make the radius grow
         self.radius += 8/(0.1*(4-self.frame)**2 + 1)
         r,g,b = self.color
-        b -= 150 * delta            # make the color go from white to yellow
+        b -= 220 * delta            # make the color go from white to yellow
         if b < 0: b = 0
         self.color = (r, g, b)
 
@@ -228,7 +234,7 @@ class ExplosionParticle(Particle):
 class Ground(GameObject):
     def __init__(self, x=0, y=0):
         # construct the parent
-        GameObject.__init__(self, 'Slope', static=True)
+        super().__init__('Slope', static=True)
 
         self.position.x = x
         self.position.y = y
@@ -337,7 +343,6 @@ game.key_actions.down( pg.K_x,     lambda: player.shoot() )
 game.key_actions.down( pg.K_SPACE, lambda: player.jump() )
 
 while game.running:
-    # loop_start_time = time.time()
 
     # -------------------------------
     #         Handle Events
@@ -358,8 +363,11 @@ while game.running:
     game.draw()
     pg.display.update()
 
+    # -------------------------------
+    #        Tick the Clock
+    # -------------------------------
+
     game.tick()
-    # game.last_loop_time = time.time() - loop_start_time
 
 pg.quit()
 sys.exit()
