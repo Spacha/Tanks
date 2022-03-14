@@ -141,9 +141,15 @@ async def listen_socket(websocket, path):
                 }))
                 
             elif room:
+
+                ##
+                # Send game_state_update to all clients in the room...
+                ##
+
                 # Identify message and pass it off to the room queue
                 message['client_id'] = client.id
                 await room.event_queue.put(message)
+
             else:
                 # Behave as trivial echo server if not in room (will be removed
                 # in my final version)
