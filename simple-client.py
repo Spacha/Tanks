@@ -1,5 +1,6 @@
 from typing import *
 import asyncio, json, websockets, time, sys
+import pygame as pg
 import aioconsole
 
 '''
@@ -27,24 +28,45 @@ def encode_msg(msg: Dict) -> str:
 def decode_msg(text: str) -> Dict:
     return json.loads(text)
 
-# An even simpler stats tracker than the server 
-trigger_count = 5000.0
-if slow > 0:
-    trigger_count /= (1+slow) * 100
-
+ACTIVITY_TYPES = [
+    'move',
+    'move_barrel',
+    'shoot',
+    'change_shell',
+    'end_turn'
+]
 in_console = False
-
 async def producer(websocket):
     global in_console
 
-    data = ""
-    while data != "exit":
+    activity_type = ""
+    activity_value = ""
+    #while activity_type != "exit":
+    while True:
         in_console = True
-        data = await aioconsole.ainput("Message: ")
+        activity_type = await aioconsole.ainput("Activity type: ")
+        activity_value = await aioconsole.ainput("Activity value: ")
         in_console = False
-        await websocket.send(encode_msg({'type': 'test', 'data': data }))
-        # await sleep(0.05) # give some time for other thread(s) as well...
-        print("Sent", data)
+        #await websocket.send(encode_msg({'type': 'test', 'data': data }))
+        '''
+        type: move,             value: -1
+        type: move_barrel,      value: 1.5
+        type: shoot,            value: None
+        type: change_shell,     value: 4
+        type: end_turn,         value: None
+        '''
+        if "exit" in [activity_type, activity_value]:
+            break
+        if activity_type not in ACTIVITY_TYPES:
+            print("Allowed activity types are:", ACTIVITY_TYPES)
+            continue
+
+        activity = {'type': activity_type, 'value': activity_value}
+        message = encode_msg({'type': 'game_activity', 'activity': activity })
+        await websocket.send(message)
+        print("Sent:    ", message)
+        await asyncio.sleep(1)
+        # await asyncio.sleep(0.05) # give some time for other thread(s) as well...
     
 async def consumer(websocket):
     count = 0
@@ -61,6 +83,7 @@ async def consumer(websocket):
             client_id = msg['client_id']
         else:
             # Ensure the messages have a single total order
+            '''
             msg_id = msg['msg_id']
             if last_msg_id is None:
                 last_msg_id == msg_id
@@ -68,15 +91,18 @@ async def consumer(websocket):
                 if msg_id != (last_msg_id+1):
                     print(last_msg_id, msg_id)
                     raise Exception("bad msg sequence")
+            '''
 
         if not in_console:
             print("Received:", msg)
 
 async def hello():
     uri = "ws://localhost:8765"
+    player_name = input("Nickame: ")
+
     async with websockets.connect(uri) as websocket:
         print("Connect")
-        await websocket.send( encode_msg({ 'type': 'join', 'room': room }) )
+        await websocket.send( encode_msg({ 'type': 'join', 'room': room, 'player_name': player_name }) )
         consumer_task = asyncio.ensure_future( consumer(websocket) )
         producer_task = asyncio.ensure_future( producer(websocket) )
         done = await asyncio.wait(

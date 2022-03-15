@@ -11,6 +11,7 @@ function loaded() {
 		socket.send(encode_msg({
 			type: 'join',
 			room: 'js-room',
+			player_name: 'ChromeClient'
 		}));
 		console.log("Opened")
 	});
@@ -26,13 +27,14 @@ function loaded() {
 	console.log("LOADED")
 	
 	let count = 0
-	setInterval(() => {
+	/*setInterval(() => {
 		count = count+1
 		socket.send(encode_msg({
 			type: 'ping',
 			seq: count,
 		}))
 	}, 500)
+	*/
 }
 
 function encode_msg(msg) { 

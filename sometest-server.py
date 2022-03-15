@@ -95,7 +95,8 @@ async def listen_room(room):
                 print("Lost client in send")
                 client.disconnected = True
                 # Hoping incoming will detect disconnected as well
-            
+        
+        print(qevent['msg_id'])
         stats.incr(count)
         
         # Remove clients that aren't there anymore. I don't really need this in
