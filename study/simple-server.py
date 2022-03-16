@@ -4,6 +4,10 @@ import asyncio, websockets, json, time
 from collections import defaultdict
 import sys, traceback
 
+import pygame as pg
+
+FPS = 60
+
 # Source: https://mortoray.com/2020/12/06/high-throughput-game-message-server-with-python-websockets/
 
 #sys.path.append('../server')
@@ -23,6 +27,10 @@ class GameState:
         self.client_positions = []
         self.changed_clients = set()
 
+        pg.init()
+        self.clock = pg.time.Clock()
+        self.delta = 0.0
+
     def join(self, client_id, player_name):
         print(f"Client {client_id} joined as {player_name}.")
         self.clients.append((client_id, player_name))
@@ -33,19 +41,27 @@ class GameState:
         if activity['type'] == 'move':
             idx = self.client_idx(client_id)
             try:
-                self.client_positions[idx] += float(activity['value'])
-            except:
-                return
+                self.client_positions[idx] += self.delta * float(activity['value'])
+                self.delta = self.clock.tick(FPS) / 1000.0
+            except Exception as e:
+                print("Error in position update:", e)
             self.changed_clients.add(idx)
 
-    def get_state(self):
-        client_changes = {}
-        for changed_client in self.changed_clients:
-            client_changes[self.clients[changed_client][0]] = {'position': self.client_positions[changed_client]}
+    def get_state(self, absolute=False):
+        if absolute: # absolute update
+            state = {}
+            for cid, (client_id, player_name) in enumerate(self.clients):
+                state[client_id] = self.client_positions[cid]
 
-        self.changed_clients = set()
+            return state
+        else:  # incremental update
+            client_changes = {}
+            for changed_client in self.changed_clients:
+                client_changes[self.clients[changed_client][0]] = {'position': self.client_positions[changed_client]}
 
-        return {'map_changes': None, 'client_changes': client_changes}
+            self.changed_clients = set()
+
+            return {'map_changes': None, 'client_changes': client_changes}
 
     def client_idx(self, client_id):
         for idx, (cid, cname) in enumerate(self.clients):
@@ -84,8 +100,8 @@ class Room:
     def update_game(self, client_id, activity):
         self.game.update(client_id, activity)
 
-    def get_game_state(self):
-        return self.game.get_state()
+    def get_game_state(self, absolute=False):
+        return self.game.get_state(absolute)
 
     def join(self, client, player_name):
         self.new_clients.append(client)
@@ -146,7 +162,7 @@ async def listen_room(room):
                 try:
                     room.update_game( qevent['client_id'], qevent['activity'] )
                 except KeyError:
-                    print("Invalid game_activity payload")
+                    print("Invalid game_activity payload:", qevent)
                 except Exception as e:
                     print("Unexpected error:", sys.exc_info(), traceback.format_exc())
                     raise
@@ -226,7 +242,16 @@ async def listen_socket(websocket, path):
                 
             elif room:
 
-                if message['type'] == 'game_activity':
+                if message['type'] == 'start_game':
+
+                    print("Game starts!")
+
+                    await websocket.send(encode_msg({
+                        'type': 'game_state',
+                        'game_state': room.get_game_state(True)
+                    }))
+
+                elif message['type'] == 'game_activity':
 
                     ##
                     # Send game_state_update to all clients in the room...
