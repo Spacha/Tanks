@@ -32,7 +32,10 @@ class GameState:
         print(f"Game activity from player {self.player_name(client_id)}: {activity['type']}")
         if activity['type'] == 'move':
             idx = self.client_idx(client_id)
-            self.client_positions[idx] += float(activity['value'])
+            try:
+                self.client_positions[idx] += float(activity['value'])
+            except:
+                return
             self.changed_clients.add(idx)
 
     def get_state(self):
@@ -247,7 +250,7 @@ async def listen_socket(websocket, path):
         # In case something else happens we want to ditch this client. This
         # won't come from websockets, but likely the code above, like
         # having a broken JSON message.
-        print(e)
+        print("Unexpected error:", sys.exc_info(), traceback.format_exc())
         pass
     
     # Only mark disconnected for queue loop on clients isn't broken
