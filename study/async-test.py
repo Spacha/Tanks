@@ -8,6 +8,7 @@ import sys
 WIDTH, HEIGHT = 300, 150
 FPS = 60
 
+another_players = []
 running = True
 
 def quit():
@@ -30,17 +31,50 @@ def threaded(sync_q: janus.SyncQueue[int]) -> None:
     pg.fastevent.init()
     scr = pg.display.set_mode((WIDTH, HEIGHT))
 
+
+    player_pos = 150
+    player_max_speed = 2
+    player_velocity = 0
+
     i = 0
     while running:
+
+        #
+        # Handle events
+        #
+
         for event in pg.fastevent.get():
             if event.type == pg.QUIT:
                 quit()
             elif event.type == pg.KEYDOWN:
-                print("keydown")
                 if event.key == pg.K_x:
-                    print("x")
                     update('shoot', sync_q)
+                elif event.key == pg.K_LEFT:
+                    update('move', sync_q)
+                    player_velocity = -player_max_speed
+                elif event.key == pg.K_RIGHT:
+                    update('move', sync_q)
+                    player_velocity = player_max_speed
+            elif event.type == pg.KEYUP:
+                if event.key in [pg.K_LEFT, pg.K_RIGHT]:
+                    update('move', sync_q)
+                    player_velocity = 0
+
+        #
+        # Update (physics etc.)
+        #
+
+        if player_velocity != 0:
+            player_pos += player_velocity
+
+        #
+        # Render
+        #
         scr.fill(( 0 , 0 , 0 ))
+        pg.draw.circle(scr, pg.Color('red'), (player_pos, 75), 25)
+
+        for another_player in another_players:
+            pg.draw.circle(scr, pg.Color('white'), (another_player, 75), 25)
 
         '''
         if i % 10 == 9:
@@ -61,7 +95,7 @@ async def async_listen(async_q: janus.AsyncQueue[int]) -> None:
     '''
     while running:
         val = await async_q.get()
-        await asyncio.sleep(1)
+        await asyncio.sleep(0.25)  # mimic some network latency...
         print('Handled:', val)
 
 async def main() -> None:
