@@ -23,7 +23,6 @@ client_id = None
 def quit():
     global running
     running = False
-    pg.quit()
     #sys.exit()
     #for task in asyncio.all_tasks():
     #    task.cancel()
@@ -115,6 +114,8 @@ def threaded(recv_queue: janus.SyncQueue[int], send_queue: janus.SyncQueue[int])
         pg.display.update()
         i += 1
 
+    pg.quit()
+
 
 async def producer(websocket, send_queue: janus.AsyncQueue[int]) -> None:
     '''
@@ -150,6 +151,8 @@ async def consumer(websocket, recv_queue: janus.AsyncQueue[int]):
             await recv_queue.put(msg)
             #{'type': 'game_state', 'game_state': {'1': 0.0}}
 
+        if not running:
+            break
 
 
         print("Received:", msg)
@@ -181,77 +184,15 @@ async def main() -> None:
         )
         await fut
 
-    queue.close()
-    await queue.wait_closed()
+    recv_queue.close()
+    await recv_queue.wait_closed()
+    send_queue.close()
+    await send_queue.wait_closed()
     print("Connection closed.")
 
-
-try:
-    asyncio.run(main())
-except KeyboardInterrupt:
-    print("Nicely shutting down ...")
-    quit()
-else:
-    raise
-    
-'''
-import asyncio
-import time
-
-queue = asyncio.Queue()
-
-counter = 0
-async def listen():
-    global counter
-
-    print("Start listen...")
-
-    while True:
-        data = await queue.get()
-        print("Updated:", data, counter)
-        counter += 1
-
-async def update(data):
-    print(">>> Putting data")
-    #await queue.put(data)
-
-async def main_loop():
-    i = 0
-    while True:
-        print('Handle events')
-        if i % 10 == 0:
-            await update('somedatahere')
-        print('Draw screen')
-        # await asyncio.sleep(2)
-        await asyncio.sleep(0.5)
-        #time.sleep(0.5)
-        i += 1
-
-async def main():
-    #loop = asyncio.get_event_loop()
-    main_task = asyncio.create_task( main_loop() )
-    listen_task = asyncio.create_task( listen() )
-
-    await asyncio.wait([main_task, listen_task], return_when=asyncio.FIRST_COMPLETED)
-
-asyncio.run( main() )
-'''
-
-#loop = asyncio.get_event_loop()
-#loop.create_task(main_loop)
-#a = asyncio.ensure_future(listen())
-#b = asyncio.ensure_future(main_loop())
-
-# loop.run_until_complete(a)
-#task = loop.create_task( main_loop() )
-#loop.run_until_complete(task)
-'''
-from concurrent.futures import ProcessPoolExecutor
 if __name__ == "__main__":
-    executor = ProcessPoolExecutor(2)
-    loop = asyncio.get_event_loop()
-    boo = loop.run_in_executor(executor, listen)
-    baa = loop.run_in_executor(executor, main_loop)
-
-    loop.run_forever()
-'''
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Nicely shutting down ...")
+        quit()

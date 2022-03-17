@@ -20,8 +20,10 @@ function join()
 		console.log("Opened")
 	});
 
+	window.count = 0;
 	socket.addEventListener('message', function (event) {
 		console.log('Message from server ', event.data);
+		window.count++;
 	});
 	
 	window.addEventListener('beforeunload', () => {
@@ -31,8 +33,14 @@ function join()
 	console.log("LOADED")
 	connected = true;
 	
-	let count = 0
-	/*setInterval(() => {
+	setInterval(() => {
+		console.log("Ticks per second: " + count);
+		document.querySelector('span[id="ticks-per-second"]').innerHTML = count;
+		window.count = 0;
+	}, 1000)
+	/*
+	let count = 0;
+	setInterval(() => {
 		count = count+1
 		socket.send(encode_msg({
 			type: 'ping',
@@ -72,5 +80,10 @@ function decode_msg(text) {
 
 	<button onclick="join()">Join!</button>
 	<button onclick="disconnect()">Disconnect</button>
+
+	<div>
+		<p>Stats:</p>
+		<p>Ticks last second: <span id=ticks-per-second></span></p>
+	</div>
 </body>
 </html>

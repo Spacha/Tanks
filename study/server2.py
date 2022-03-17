@@ -34,7 +34,7 @@ class Game:
         self.room_key = room_key
         self.future = None
         self.rx_queue = janus.Queue()
-        self.send_message = lambda m: send_message_cb(self.room_key, m)    # synchronous
+        self.send_message = lambda m: send_message_cb(self.room_key, m)
         self.clients = {}
         self.new_clients = []
         self.last_client_id = 0
@@ -80,7 +80,6 @@ class Game:
         #self.tx_queue.sync_q.put({'type': 'test', 'tick': self.tick})
         message = {'type': 'test', 'tick': self.current_tick}
         self.send_message(message)
-        print("Sent:    ", message)
 
     def tick(self):
         self.delta = self.clock.tick(TICK_RATE)
@@ -91,15 +90,16 @@ class Game:
         self.running = False
         self.rx_queue.close()
         #await self.rx_queue.wait_closed()
+        pg.quit()
 
 class GameServer:
     def __init__(self, host, port):
         self.host = host
         self.port = port
         self.async_loop = None
-        #self.rx_queue = None
-        #self.tx_queue = None
-        #self.game = Game(self.get_messages, self.send_message)
+        self.tx_queue = None
+
+        self.running = False
         self.rooms = {}
 
     def run(self):
@@ -122,6 +122,12 @@ class GameServer:
     def create_room(self, room_key):
         return Game(room_key, self.send_message)
 
+    async def destroy_room(self, room):
+        await room.rx_queue.async_q.put(None)
+        room.stop()
+        del self.rooms[room.room_key]
+        await room.future
+
     '''
     def get_messages(self, room_key):
         messages = []
@@ -135,14 +141,13 @@ class GameServer:
 
     async def thread_manager(self):
         self.async_loop = asyncio.get_event_loop()
-        #self.rx_queue = janus.Queue()
         self.tx_queue = janus.Queue()
 
         try:
             print("Starting server...")
-            async with websockets.serve(self.thread_socket_recv, self.host, self.port) as socket:
+            async with websockets.serve(self.recv_thread, self.host, self.port) as socket:
                 print(f"Started at ws://{self.host}:{self.port}.")
-                send_task = asyncio.create_task( self.thread_socket_send(socket) )
+                send_task = asyncio.create_task( self.send_thread(socket) )
 
                 with suppress(asyncio.CancelledError):
                     done, pending = await asyncio.wait(
@@ -162,19 +167,17 @@ class GameServer:
         await self.tx_queue.wait_closed()
         print("Server stopped.")
 
-    def thread_game(self, room_key):
+    def game_thread(self, room_key):
         room = self.rooms[room_key]
         try:
             while self.running and room.running:
-                print(f"Room '{room_key}' update.")
                 self.rooms[room_key].run_loop()
-                time.sleep(1)
 
         except BaseException as e:
             if e is not KeyboardInterrupt:
                 print(traceback.format_exc())
 
-    async def thread_socket_recv(self, socket):
+    async def recv_thread(self, socket):
         client = None
         room = None
         try:
@@ -182,13 +185,16 @@ class GameServer:
                 message = decode_msg(message_raw)
                 if message['type'] == 'join':
                     room_key = message['room']
+
+                    # TODO: check client & server version compatibility
+                    # return: client_id, tick_rate
                     
                     # If such room doesn't exist, create a new one.
                     if not room_key in self.rooms:
                         room = self.create_room(room_key)
                         self.rooms[room_key] = room
 
-                        room.future = self.async_loop.run_in_executor(None, self.thread_game, room_key)
+                        room.future = self.async_loop.run_in_executor(None, self.game_thread, room_key)
                     else:
                         room = self.rooms[room_key]
 
@@ -196,27 +202,22 @@ class GameServer:
 
                 elif room:  # room is already up...
                     #await self.room.rx_queue.async_q.put( decode_msg(message_raw) )
-                    await room.rx_queue.async_q.put( decode_msg(message_raw) )
+                    await room.rx_queue.async_q.put(message)
 
         except websockets.exceptions.ConnectionClosedError:
             pass
 
         # Client disconncted. If the room becomes empty, destroy it.
-        client.disconnected = True
-        if room is not None:
+        if client:
+            client.disconnected = True
+            print(f"Client '{client.player_name}' disconnected from room '{room.room_key}'.")
+
+        if room:
             if room.client_count() == 0:
                 await self.destroy_room(room)
-                print(f"Cleaned Room {room.room_key}")
+                print(f"Cleaned room '{room.room_key}'.")
 
-        print(f"Client '{client.player_name}' disconnected from room '{room.room_key}'.")
-
-    async def destroy_room(self, room):
-        await room.rx_queue.async_q.put(None)
-        room.stop()
-        del self.rooms[room.room_key]
-        await room.future
-
-    async def thread_socket_send(self, socket):
+    async def send_thread(self, socket):
         while self.running:
             room_key, message = await self.tx_queue.async_q.get()
             room = self.rooms[room_key]
@@ -247,26 +248,6 @@ class GameServer:
                     print(f"Disconnected client '{room.clients[d].player_name}'.")
                     del room.clients[d]
 
-            '''
-            for client in room.clients.values():
-                if client.disconnected:
-                    disconnected.append(client.id)
-                    continue
-                count += 1
-                
-                # There's likely some asyncio technique to do this in parallel
-                try:
-                    await client.socket.send(message)
-                    #await client.socket.send(encode_msg(qevent))
-
-                except websockets.ConnectionClosed:
-                    print("Lost client in send")
-                    client.disconnected = True
-                    # Hoping incoming will detect disconnected as well
-
-                except Exception as e:
-                    print("Unexpected error:", sys.exc_info(), traceback.format_exc())
-            '''
 
 if __name__ == "__main__":
     server = GameServer('localhost', 8765)
