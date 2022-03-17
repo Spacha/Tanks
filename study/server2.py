@@ -20,13 +20,23 @@ def decode_msg(text):
 
 TICK_RATE = 32
 
+class Client:
+    def __init__(self, id, socket, player_name):
+        self.id = id
+        self.socket = socket
+        self.player_name = player_name
+        self.disconnected = False
+
 class Game:
-    def __init__(self, get_messages, send_message):
+    def __init__(self, room_key, send_message_cb):
 
         # Server stuff...
-        self.get_messages = get_messages    # synchronous
-        self.send_message = send_message    # synchronous
-        self.clients = []
+        self.room_key = room_key
+        self.future = None
+        self.rx_queue = janus.Queue()
+        self.send_message = lambda m: send_message_cb(self.room_key, m)    # synchronous
+        self.clients = {}
+        self.new_clients = []
         self.last_client_id = 0
 
         # Game stuff...
@@ -34,6 +44,22 @@ class Game:
         self.clock = pg.time.Clock()
         self.delta = 0
         self.current_tick = 0
+
+        self.running = True
+
+    def join(self, socket, name):
+        #self.clients.append(Client(self.last_client_id, socket, name))
+        self.new_clients.append(Client(self.last_client_id, socket, name))
+        print(f"Client '{name}' (ID = {self.last_client_id}) joined")
+        self.last_client_id += 1
+
+        return self.new_clients[-1]
+
+    def client_count(self):
+        return len([c.id for c in self.clients.values() if not c.disconnected])
+
+    def get_messages(self):
+        return []
 
     def run_loop(self):
         self.check_events()
@@ -49,6 +75,7 @@ class Game:
 
     def update(self):
         pass
+
     def send_update(self):
         #self.tx_queue.sync_q.put({'type': 'test', 'tick': self.tick})
         message = {'type': 'test', 'tick': self.current_tick}
@@ -61,16 +88,19 @@ class Game:
 
     def stop(self):
         print("Stopping game.")
+        self.running = False
+        self.rx_queue.close()
+        #await self.rx_queue.wait_closed()
 
 class GameServer:
     def __init__(self, host, port):
         self.host = host
         self.port = port
         self.async_loop = None
-        self.rx_queue = None
-        self.tx_queue = None
-        self.game = Game(self.get_messages, self.send_message)
-        self.rooms = []
+        #self.rx_queue = None
+        #self.tx_queue = None
+        #self.game = Game(self.get_messages, self.send_message)
+        self.rooms = {}
 
     def run(self):
         self.running = True
@@ -81,29 +111,31 @@ class GameServer:
 
     def stop(self, e=None):
         self.running = False
-        self.game.stop()
+
+        #self.game.stop()
+        for room_key, room in self.rooms.items():
+            room.stop()
+
         if e not in [None, KeyboardInterrupt]:
             print(traceback.format_exc())
 
-    def join(self, socket, name):
-        self.clients.append((socket, name))
-        print(f"Client {name} (ID = {self.last_client_id}) joined")
-        self.last_client_id += 1
-        #self.game.join(...)
+    def create_room(self, room_key):
+        return Game(room_key, self.send_message)
 
-    def get_messages(self):
+    '''
+    def get_messages(self, room_key):
         messages = []
         # read all messages from the buffer
         while not self.rx_queue.sync_q.empty():
             messages.append( self.rx_queue.sync_q.get() )
         return messages
-
-    def send_message(self, message):
-        self.tx_queue.sync_q.put( encode_msg(message) )
+    '''
+    def send_message(self, room_key, message):
+        self.tx_queue.sync_q.put((room_key, encode_msg(message)))
 
     async def thread_manager(self):
         self.async_loop = asyncio.get_event_loop()
-        self.rx_queue = janus.Queue()
+        #self.rx_queue = janus.Queue()
         self.tx_queue = janus.Queue()
 
         try:
@@ -116,27 +148,26 @@ class GameServer:
                     done, pending = await asyncio.wait(
                         [send_task], return_when=asyncio.FIRST_COMPLETED
                     )
-                    #await game_future
-                    pass
 
         except BaseException as e:
             self.stop(e)
-            pass
         
         print("Stopping server...")
         if self.running:
             self.stop()
-        self.rx_queue.close()
-        await self.rx_queue.wait_closed()
+
+        #self.rx_queue.close()
+        #await self.rx_queue.wait_closed()
         self.tx_queue.close()
         await self.tx_queue.wait_closed()
         print("Server stopped.")
 
-    def thread_game(self):
+    def thread_game(self, room_key):
+        room = self.rooms[room_key]
         try:
-            while self.running:
-                print("Game update.")
-                self.game.run_loop()
+            while self.running and room.running:
+                print(f"Room '{room_key}' update.")
+                self.rooms[room_key].run_loop()
                 time.sleep(1)
 
         except BaseException as e:
@@ -144,34 +175,77 @@ class GameServer:
                 print(traceback.format_exc())
 
     async def thread_socket_recv(self, socket):
+        client = None
+        room = None
         try:
             async for message_raw in socket:
                 message = decode_msg(message_raw)
                 if message['type'] == 'join':
-                    #room_key = message['room']
-                    # Do we need to start new game thread here for each game/room? Probably.
-                    self.join(socket, message['player_name'])
-                    game_future = self.async_loop.run_in_executor(None, self.thread_game)
-                    with suppress(asyncio.CancelledError):
-                        await game_future
-                else:
-                    await self.rx_queue.async_q.put( decode_msg(message_raw) )
+                    room_key = message['room']
+                    
+                    # If such room doesn't exist, create a new one.
+                    if not room_key in self.rooms:
+                        room = self.create_room(room_key)
+                        self.rooms[room_key] = room
+
+                        room.future = self.async_loop.run_in_executor(None, self.thread_game, room_key)
+                    else:
+                        room = self.rooms[room_key]
+
+                    client = room.join(socket, message['player_name'])
+
+                elif room:  # room is already up...
+                    #await self.room.rx_queue.async_q.put( decode_msg(message_raw) )
+                    await room.rx_queue.async_q.put( decode_msg(message_raw) )
+
         except websockets.exceptions.ConnectionClosedError:
-            print("Client disconnected.")
+            pass
+
+        # Client disconncted. If the room becomes empty, destroy it.
+        client.disconnected = True
+        if room is not None:
+            if room.client_count() == 0:
+                await self.destroy_room(room)
+                print(f"Cleaned Room {room.room_key}")
+
+        print(f"Client '{client.player_name}' disconnected from room '{room.room_key}'.")
+
+    async def destroy_room(self, room):
+        await room.rx_queue.async_q.put(None)
+        room.stop()
+        del self.rooms[room.room_key]
+        await room.future
 
     async def thread_socket_send(self, socket):
         while self.running:
-            #print("Sender.")
-            #await asyncio.sleep(0.5)
-            message = await self.tx_queue.async_q.get()
+            room_key, message = await self.tx_queue.async_q.get()
+            room = self.rooms[room_key]
 
-            for client_socket, player_name in self.clients:
+            # Add any new clients that have shown up, this handler must control this
+            # to avoid it happening inside the loop
+            if len(room.new_clients) > 0:
+                for client in room.new_clients:
+                    room.clients[client.id] = client
+                room.new_clients = []
+
+            disconnected = []
+            # who to send? put it in the queue (None = all)
+            for client_id, client in room.clients.items():
+                if client.disconnected:
+                    disconnected.append(client.id)
+                    continue
+
                 try:
-                    await client_socket.send(message)
+                    await client.socket.send(message)
                 except websockets.ConnectionClosed:
                     print("Lost client in send")
-                    #client.disconnected = True
-                    # Hoping incoming will detect disconnected as well
+                    client.disconnected = True
+
+            for d in disconnected:
+                # Check again since they may have reconnected in other loop
+                if room.clients[d]:
+                    print(f"Disconnected client '{room.clients[d].player_name}'.")
+                    del room.clients[d]
 
             '''
             for client in room.clients.values():

@@ -159,7 +159,7 @@ async def main() -> None:
 
     uri = "ws://localhost:8765"
     player_name = "Spacha"
-    room = "js-room"
+    room = "paska-room"
 
     recv_queue: janus.Queue[int] = janus.Queue()
     send_queue: janus.Queue[int] = janus.Queue()

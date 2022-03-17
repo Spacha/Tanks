@@ -1,17 +1,21 @@
 <html>
 <script>
-function loaded() {
-
+var connected = false;
+function join()
+{
 	console.log("Loaded")
 	const socket = new WebSocket('ws://localhost:8765');
 
 	window.socket = socket;
 
+	let room = document.querySelector('input[name="room"]').value;
+	let player_name = document.querySelector('input[name="name"]').value;
+
 	socket.addEventListener('open', function (event) {
 		socket.send(encode_msg({
 			type: 'join',
-			room: 'js-room',
-			player_name: 'ChromeClient'
+			room: room,
+			player_name: player_name
 		}));
 		console.log("Opened")
 	});
@@ -25,6 +29,7 @@ function loaded() {
 		socket.close()
 	})
 	console.log("LOADED")
+	connected = true;
 	
 	let count = 0
 	/*setInterval(() => {
@@ -37,6 +42,12 @@ function loaded() {
 	*/
 }
 
+function disconnect() { 
+	socket.close();
+	connected = false;
+	// TODO: remove event listeners
+}
+
 function encode_msg(msg) { 
 	return JSON.stringify(msg)
 }
@@ -46,7 +57,20 @@ function decode_msg(text) {
 }
 
 </script>
-<body onload="loaded()">
-	<p>Text</p>
+<!--<body onload="loaded()">-->
+<body>
+	<h2>Join room:</h2>
+
+	<div>
+		<span>Room name:</span>
+		<input name="room" />
+	</div>
+	<div>
+		<span>Nickname:</span>
+		<input name="name" />
+	</div>
+
+	<button onclick="join()">Join!</button>
+	<button onclick="disconnect()">Disconnect</button>
 </body>
 </html>
