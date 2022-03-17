@@ -13,6 +13,8 @@ import sys, traceback
 import pygame as pg
 import janus
 
+from random import randint
+
 def encode_msg(msg):
     return json.dumps(msg, ensure_ascii=False)
 def decode_msg(text):
@@ -27,6 +29,15 @@ class Client:
         self.player_name = player_name
         self.disconnected = False
 
+class Player:
+    def __init__(self, color, pos):
+        x, y = pos
+        self.color = color
+        self.x = x
+        self.y = y
+
+        self.status = 'stopped'
+
 class Game:
     def __init__(self, room_key, send_message_cb):
 
@@ -34,7 +45,7 @@ class Game:
         self.room_key = room_key
         self.future = None
         self.rx_queue = janus.Queue()
-        self.send_message = lambda m: send_message_cb(self.room_key, m)
+        self.send_message = lambda m, c: send_message_cb(self.room_key, m, c)
         self.clients = {}
         self.new_clients = []
         self.last_client_id = 0
@@ -45,14 +56,23 @@ class Game:
         self.delta = 0
         self.current_tick = 0
 
+        # testing stuff...
+        self.players = {}
+
         self.running = True
 
     def join(self, socket, name):
         #self.clients.append(Client(self.last_client_id, socket, name))
         self.new_clients.append(Client(self.last_client_id, socket, name))
         print(f"Client '{name}' (ID = {self.last_client_id}) joined.")
-        self.last_client_id += 1
 
+        self.players[self.last_client_id] = Player(
+            (randint(0,255),randint(0,255),randint(0,255)), (0,0))
+
+        # send the joined player an absolute update of the game state
+        self.send_absolute_update(self.last_client_id)
+
+        self.last_client_id += 1
         return self.new_clients[-1]
 
     def client_count(self):
@@ -79,13 +99,14 @@ class Game:
                 if message['type'] == 'game_event':
                     print(f"Received event from client {message['client_id']}:", message['event'])
 
+
     def update(self):
         pass
 
-    def send_update(self):
+    def send_update(self, client=None):
         #self.tx_queue.sync_q.put({'type': 'test', 'tick': self.tick})
         message = {'type': 'tick', 'tick': self.current_tick}
-        self.send_message(message)
+        self.send_message(message, client)
 
     def tick(self):
         self.delta = self.clock.tick(TICK_RATE)
@@ -97,6 +118,24 @@ class Game:
         self.rx_queue.close()
         #await self.rx_queue.wait_closed()
         pg.quit()
+
+    def send_absolute_update(self, client=None):
+        #self.tx_queue.sync_q.put({'type': 'test', 'tick': self.tick})
+        message = {'type': 'game_state', 'state': self.get_game_state()}
+        self.send_message(message, client)
+
+    def get_game_state(self):
+        game_state = {}
+        players = {}
+        for client_id, player in self.players.items():
+            players[client_id] = {
+                'color': player.color,
+                'position': (player.x, player.y),
+                'status': player.status
+            }
+
+        game_state['players'] = players
+        return game_state
 
 class GameServer:
     def __init__(self, host, port):
@@ -142,8 +181,8 @@ class GameServer:
             messages.append( self.rx_queue.sync_q.get() )
         return messages
     '''
-    def send_message(self, room_key, message):
-        self.tx_queue.sync_q.put((room_key, encode_msg(message)))
+    def send_message(self, room_key, message, client):
+        self.tx_queue.sync_q.put((room_key, client, encode_msg(message)))
 
     async def thread_manager(self):
         self.async_loop = asyncio.get_event_loop()
@@ -206,6 +245,7 @@ class GameServer:
                         room = self.rooms[room_key]
 
                     client = room.join(socket, message['player_name'])
+                    await client.socket.send(encode_msg({'type': 'joined', 'client_id': client.id}))
 
                 elif room:  # room is already up...
                     #await self.room.rx_queue.async_q.put( decode_msg(message_raw) )
@@ -229,7 +269,7 @@ class GameServer:
 
     async def send_thread(self, socket):
         while self.running:
-            room_key, message = await self.tx_queue.async_q.get()
+            room_key, receiver, message = await self.tx_queue.async_q.get()
             room = self.rooms[room_key]
 
             # Add any new clients that have shown up, this handler must control this
@@ -242,9 +282,13 @@ class GameServer:
             disconnected = []
             # who to send? put it in the queue (None = all)
             for client_id, client in room.clients.items():
+                if receiver is not None and client_id != receiver:
+                    continue
+
                 if client.disconnected:
                     disconnected.append(client.id)
                     continue
+
 
                 try:
                     await client.socket.send(message)
