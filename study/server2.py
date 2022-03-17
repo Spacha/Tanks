@@ -50,7 +50,7 @@ class Game:
     def join(self, socket, name):
         #self.clients.append(Client(self.last_client_id, socket, name))
         self.new_clients.append(Client(self.last_client_id, socket, name))
-        print(f"Client '{name}' (ID = {self.last_client_id}) joined")
+        print(f"Client '{name}' (ID = {self.last_client_id}) joined.")
         self.last_client_id += 1
 
         return self.new_clients[-1]
@@ -59,7 +59,12 @@ class Game:
         return len([c.id for c in self.clients.values() if not c.disconnected])
 
     def get_messages(self):
-        return []
+        messages = []
+
+        while not self.rx_queue.sync_q.empty():
+            messages.append(self.rx_queue.sync_q.get())
+
+        return messages
 
     def run_loop(self):
         self.check_events()
@@ -71,14 +76,15 @@ class Game:
         messages = self.get_messages()
         if messages:
             for message in messages:
-                print("Received:", message)
+                if message['type'] == 'game_event':
+                    print(f"Received event from client {message['client_id']}:", message['event'])
 
     def update(self):
         pass
 
     def send_update(self):
         #self.tx_queue.sync_q.put({'type': 'test', 'tick': self.tick})
-        message = {'type': 'test', 'tick': self.current_tick}
+        message = {'type': 'tick', 'tick': self.current_tick}
         self.send_message(message)
 
     def tick(self):
@@ -182,7 +188,8 @@ class GameServer:
         room = None
         try:
             async for message_raw in socket:
-                message = decode_msg(message_raw)
+                room_key, message = decode_msg(message_raw)
+
                 if message['type'] == 'join':
                     room_key = message['room']
 
@@ -202,8 +209,11 @@ class GameServer:
 
                 elif room:  # room is already up...
                     #await self.room.rx_queue.async_q.put( decode_msg(message_raw) )
+                    message['client_id'] = client.id
                     await room.rx_queue.async_q.put(message)
 
+        except json.decoder.JSONDecodeError as e:
+            print("JSON decode error:", e)
         except websockets.exceptions.ConnectionClosedError:
             pass
 

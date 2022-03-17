@@ -7,22 +7,24 @@ function join()
 	const socket = new WebSocket('ws://localhost:8765');
 
 	window.socket = socket;
+	window.count = 0;
 
 	let room = document.querySelector('input[name="room"]').value;
 	let player_name = document.querySelector('input[name="name"]').value;
 
 	socket.addEventListener('open', function (event) {
-		socket.send(encode_msg({
+		socket.send(encode_msg([null,
+		{
 			type: 'join',
 			room: room,
 			player_name: player_name
-		}));
+		}]));
 		console.log("Opened")
 	});
 
-	window.count = 0;
+	//window.count = 0;
 	socket.addEventListener('message', function (event) {
-		console.log('Message from server ', event.data);
+		//console.log('Message from server ', event.data);
 		window.count++;
 	});
 	
