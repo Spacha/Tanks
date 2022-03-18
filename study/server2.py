@@ -75,6 +75,10 @@ class Game:
         self.last_client_id += 1
         return self.new_clients[-1]
 
+    def disconnect(self, client_id):
+        del self.clients[client_id]
+        del self.players[client_id]
+
     def client_count(self):
         return len([c.id for c in self.clients.values() if not c.disconnected])
 
@@ -320,7 +324,7 @@ class GameServer:
                 # Check again since they may have reconnected in other loop
                 if room.clients[d]:
                     print(f"Disconnected client '{room.clients[d].player_name}'.")
-                    del room.clients[d]  # TODO: do this within the game.
+                    room.disconnect(d)
 
 
 if __name__ == "__main__":

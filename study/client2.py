@@ -135,6 +135,11 @@ class Game:
             self.send_event(game_event)
 
     def update(self):
+        # Local update is mainly used to smooth out network delay.
+        # If a player is moving (according to the latest server update),
+        # we will update its location based on it.
+        
+        # TODO: Should only update if there was no update package this round.
         pass
 
     def draw(self):
