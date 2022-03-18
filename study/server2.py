@@ -30,13 +30,12 @@ class Client:
         self.disconnected = False
 
 class Player:
-    def __init__(self, color, pos):
+    def __init__(self, color, pos, status='move_stop'):
         x, y = pos
         self.color = color
         self.x = x
         self.y = y
-
-        self.status = 'stopped'
+        self.status = status
 
 class Game:
     def __init__(self, room_key, send_message_cb):
@@ -70,7 +69,8 @@ class Game:
             (randint(0,255),randint(0,255),randint(0,255)), (0,0))
 
         # send the joined player an absolute update of the game state
-        self.send_absolute_update(self.last_client_id)
+        #self.send_absolute_update(self.last_client_id)
+        self.send_absolute_update()  # send to ALL players
 
         self.last_client_id += 1
         return self.new_clients[-1]
@@ -97,16 +97,31 @@ class Game:
         if messages:
             for message in messages:
                 if message['type'] == 'game_event':
-                    print(f"Received event from client {message['client_id']}:", message['event'])
 
+                    for event in message['event']:
+                        client_id = message['client_id']
+                        player = self.players[client_id]
+                        print(event)
+                        print(f"Received event from client {client_id}:", event)
+                        # these are dumbo
+                        player.status = event['type']
 
     def update(self):
-        pass
+        for id, player in self.players.items():
+            if player.status == 'move_stop':
+                continue
+            elif player.status == 'move_left':
+                player.x -= self.delta * 0.25
+            elif player.status == 'move_right':
+                player.x += self.delta * 0.25
 
     def send_update(self, client=None):
         #self.tx_queue.sync_q.put({'type': 'test', 'tick': self.tick})
-        message = {'type': 'tick', 'tick': self.current_tick}
-        self.send_message(message, client)
+        #message = {'type': 'tick', 'tick': self.current_tick}
+        #self.send_message(message, client)
+
+        # TODO: send incremental update here!
+        self.send_absolute_update()
 
     def tick(self):
         self.delta = self.clock.tick(TICK_RATE)
@@ -168,7 +183,7 @@ class GameServer:
         return Game(room_key, self.send_message)
 
     async def destroy_room(self, room):
-        await room.rx_queue.async_q.put(None)
+        #await room.rx_queue.async_q.put(None)
         room.stop()
         del self.rooms[room.room_key]
         await room.future
@@ -270,6 +285,11 @@ class GameServer:
     async def send_thread(self, socket):
         while self.running:
             room_key, receiver, message = await self.tx_queue.async_q.get()
+
+            # if the room was already destroyed
+            if not room_key in self.rooms:
+                continue
+
             room = self.rooms[room_key]
 
             # Add any new clients that have shown up, this handler must control this
@@ -300,7 +320,7 @@ class GameServer:
                 # Check again since they may have reconnected in other loop
                 if room.clients[d]:
                     print(f"Disconnected client '{room.clients[d].player_name}'.")
-                    del room.clients[d]
+                    del room.clients[d]  # TODO: do this within the game.
 
 
 if __name__ == "__main__":

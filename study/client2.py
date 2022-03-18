@@ -12,6 +12,14 @@ def decode_msg(text):
 WIDTH, HEIGHT = 300, 150
 FPS = 60
 
+class Player:
+    def __init__(self, color, pos, status='move_stop'):
+        x, y = pos
+        self.color = color
+        self.x = x
+        self.y = y
+        self.status = status
+
 class GameEvent:
     def __init__(self):
         self.events = []
@@ -28,7 +36,10 @@ class GameEvent:
     def as_dict(self):
         events = []
         for type, value in self.events:
-            events.append({'type': type, 'value': value})
+            #events.append({'type': type, 'value': value})
+            if type == 'move':
+                # move_left, move_right, move_stop
+                events.append({'type': f"{type}_{value}"})
         return events
 
 class Game:
@@ -51,6 +62,8 @@ class Game:
         self.delta = 0
         self.current_tick = 0
         self.start_time = 0
+
+        self.players = {}
 
         self.running = False
 
@@ -77,8 +90,21 @@ class Game:
         # poll messages from the socket (receive buffer)
         if not self.rx_queue.sync_q.empty():
             message = self.rx_queue.sync_q.get()
+            if message['type'] == 'game_state':
+                #print("Absolute game state received:", message['state'])
+                self.set_game_state(message['state'])
+
             if message['type'] == 'game_update':
                 print("Game update received:", message['game_update'])
+                player = message['client_id']
+                update = message['update']
+                if update['type'] == 'move':
+                    '''
+                    move:
+                        player: client_id
+                        value: new_position
+                    '''
+                    pass
 
             elif message['type'] == 'tick':
                 self.server_ticks += 1
@@ -103,7 +129,7 @@ class Game:
                     game_event.add('move', 'right')
             elif event.type == pg.KEYUP:
                 if event.key in [pg.K_LEFT, pg.K_RIGHT]:
-                    game_event.add('stop')
+                    game_event.add('move', 'stop')
 
         if not game_event.empty():
             self.send_event(game_event)
@@ -114,7 +140,9 @@ class Game:
     def draw(self):
         self.scr.fill((10, 10, 10))
 
-        pg.draw.rect(self.scr, (255,255,255), pg.Rect(30, 30, 50, 50))
+        #pg.draw.rect(self.scr, (255,255,255), pg.Rect(30, 30, 50, 50))
+        for id, player in self.players.items():
+            pg.draw.rect(self.scr, player.color, pg.Rect(player.x, player.y, 50, 50))
 
         #for element in self.gui_elements:
         #    element.draw()
@@ -144,6 +172,15 @@ class Game:
     def cleanup(self):
         pg.quit()
 
+    def set_game_state(self, state):
+        self.players = {}
+        for client_id, player_data in state['players'].items():
+            self.players[client_id] = Player(
+                player_data['color'],
+                player_data['position'],
+                player_data['status']
+            )
+
 
 class GameClient:
     def __init__(self, host, port):
@@ -158,6 +195,8 @@ class GameClient:
 
         self.running = False
         self.game = None
+
+        self.recv_ready = False
 
     def set_connection_info(self, room_key, player_name):
         self.room_key = room_key
@@ -206,9 +245,11 @@ class GameClient:
                 recv_task = asyncio.create_task( self.recv_thread(socket) )
 
                 self.create_game()
+                '''
                 await socket.send(encode_msg((None, {
                     'type': 'join', 'room': self.room_key, 'player_name': self.player_name
                 })))
+                '''
 
                 with suppress(asyncio.CancelledError):
                     done, pending = await asyncio.wait(
@@ -236,6 +277,14 @@ class GameClient:
         # must have been initialized in the main thread for it to work.
         self.game = Game(self.room_key, self.player_name, rx_queue, self.send_message)
 
+        while not self.recv_ready:
+            pass
+
+        # join request will be sent as soon as the threads are ready
+        self.send_message(None, {
+            'type': 'join', 'room': self.room_key, 'player_name': self.player_name
+        })
+
         try:
             self.game.start()
             while self.running and self.game.running:
@@ -250,6 +299,7 @@ class GameClient:
 
     async def recv_thread(self, socket):
         try:
+            self.recv_ready = True
             async for message_raw in socket:
                 message = decode_msg(message_raw)
 
