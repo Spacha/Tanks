@@ -1,0 +1,56 @@
+Server:
+	state:
+		current_turn: 1
+		players: {
+		'1': {
+			name: 			'NAME-1',
+			position: 		(X, Y),
+			barrel_angle: 	90,
+			current_shell: 	SHELL_DEFAULT
+		},
+		'2': {
+			name: 			'NAME-2',
+			position: 		(X, Y),
+			barrel_angle: 	125,
+			current_shell: 	SHELL_DEFAULT
+		}},
+		map: MAP
+
+Client:
+	state:
+		pass
+
+
+press K_LEFT:
+	send to server:
+		activity: move_left
+		activity_time: monotonic timestamp from the start of the game
+release K_LEFT:
+	send to server:
+		activity: stop
+		activity_time: ...
+
+
+server: (32-tick => 1/32 = 31.25ms/tick)
+	Updates all clients every 31.25 ms. Each client corrects their predictions of the players' positions based on the packages.
+
+
+
+Threads:
+	* For each game (room), there is a separate thread. It runs the game loop at TICK_RATE.
+	* For each client, there is a separate socket receive thread that listens for incoming
+	  messages from the socket and puts the message to appropriate room's receive queue.
+	* There is a single socket send thread that polls the send queue and sends the messages
+	  to appropriate group of clients.
+
+RoomThread[0]:
+	rx_buffer
+RoomThread[1]:
+	rx_buffer
+RecvThread[0]:
+	message in socket:
+		room.rx_buffer.put(message)
+SendThread[0]:
+	room, message = tx_buffer.get()
+	for client in room.clients:
+		client.socket.send(message)

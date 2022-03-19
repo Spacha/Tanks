@@ -9,7 +9,8 @@ def encode_msg(msg):
 def decode_msg(text):
     return json.loads(text)
 
-WIDTH, HEIGHT = 300, 150
+TICK_RATE = 1  # must match with the server
+WIDTH, HEIGHT = 800, 500
 FPS = 60
 
 class Player:
@@ -48,10 +49,11 @@ class Game:
         # Client stuff...
         self.room_key = room_key
         self.player_name = player_name
+        self.client_id = None
         self.rx_queue = rx_queue
         self.send_message = lambda m: send_message_cb(self.room_key, m)
 
-        self.server_ticks = 0
+        self.server_tick = 0
 
         # Game stuff...
         pg.init()
@@ -66,15 +68,24 @@ class Game:
         self.players = {}
 
         self.running = False
+        self.joined = False
+
+        # Prediction related...
+        self.updated = False  # whether we got an update packet this tick
 
     def start(self):
+        print("Waiting for join accept...")
+        while not self.joined:
+            self.check_server_events()
+            time.sleep(0.25)
+
+        if self.client_id is not None:
+            print(f"Joined. Client ID: {self.client_id}")
+
+        # Actually start the game.
         self.running = True
         self.start_time = time.monotonic()
 
-        # this is some temp stuff
-        self.last_update_time = self.start_time
-        self.last_update_ticks = 0
-        self.tick_text = None
 
     def run_loop(self):
         self.check_server_events()
@@ -87,14 +98,17 @@ class Game:
             self.cleanup()
 
     def check_server_events(self):
+        self.updated = False
+
         # poll messages from the socket (receive buffer)
         if not self.rx_queue.sync_q.empty():
             message = self.rx_queue.sync_q.get()
             if message['type'] == 'game_state':
                 #print("Absolute game state received:", message['state'])
                 self.set_game_state(message['state'])
+                self.updated = True
 
-            if message['type'] == 'game_update':
+            elif message['type'] == 'game_update':
                 print("Game update received:", message['game_update'])
                 player = message['client_id']
                 update = message['update']
@@ -106,9 +120,15 @@ class Game:
                     '''
                     pass
 
+            elif message['type'] == 'joined':
+                self.client_id = message['client_id']  # get current player's client id
+                self.joined = True
+
+            '''
             elif message['type'] == 'tick':
                 self.server_ticks += 1
                 self.server_tick = message['tick']
+            '''
 
     def check_events(self):
         # check events (quit etc...)
@@ -125,11 +145,17 @@ class Game:
                     self.stop()
                 elif event.key == pg.K_LEFT:
                     game_event.add('move', 'left')
+                    # for prediction
+                    self.get_player().status = 'move_left'
                 elif event.key == pg.K_RIGHT:
                     game_event.add('move', 'right')
+                    # for prediction
+                    self.get_player().status = 'move_right'
             elif event.type == pg.KEYUP:
                 if event.key in [pg.K_LEFT, pg.K_RIGHT]:
                     game_event.add('move', 'stop')
+                    # for prediction
+                    self.get_player().status = 'move_stop'
 
         if not game_event.empty():
             self.send_event(game_event)
@@ -139,25 +165,33 @@ class Game:
         # If a player is moving (according to the latest server update),
         # we will update its location based on it.
         
-        # TODO: Should only update if there was no update package this round.
-        pass
+        # Position prediction is only done if update was not received this tick.
+        #if self.updated:
+        #    return
+
+        for client_id, player in self.players.items():
+            if player.status == 'move_stop':
+                continue
+
+            elif player.status == 'move_left':
+                player.x -= self.delta * 0.25
+            elif player.status == 'move_right':
+                player.x += self.delta * 0.25
+
 
     def draw(self):
         self.scr.fill((10, 10, 10))
 
-        #pg.draw.rect(self.scr, (255,255,255), pg.Rect(30, 30, 50, 50))
         for id, player in self.players.items():
             pg.draw.rect(self.scr, player.color, pg.Rect(player.x, player.y, 50, 50))
 
         #for element in self.gui_elements:
         #    element.draw()
-        if time.monotonic() - self.last_update_time > 1.0:
-            tick_rate = (self.server_ticks - self.last_update_ticks) / (time.monotonic() - self.last_update_time)
-            self.last_update_time = time.monotonic()
-            self.last_update_ticks = self.server_ticks
-            self.tick_text = self.font.render(f"Tick rate: {round(tick_rate)} ticks/s", True, (255, 255, 255))
-        if self.tick_text:
-            self.scr.blit(self.tick_text, self.tick_text.get_rect())
+        tick_text_s = self.font.render(f"Server tick: {self.server_tick}", True, (255,255,255))
+        tick_text_c = self.font.render(f"Client tick: {self.current_tick}", True, (255,255,255))
+
+        self.scr.blit(tick_text_s, tick_text_s.get_rect().move(0,0))
+        self.scr.blit(tick_text_c, tick_text_c.get_rect().move(0,20))
 
         pg.display.update()
 
@@ -178,6 +212,14 @@ class Game:
         pg.quit()
 
     def set_game_state(self, state):
+        # debug:
+        for client_id, player_data in state['players'].items():
+            if client_id in self.players:
+                x_error = self.players[client_id].x - player_data['position'][0]
+                if abs(x_error) > 0:
+                    print(f"Player {client_id} X error: {x_error}")
+
+        self.server_tick = state['tick']
         self.players = {}
         for client_id, player_data in state['players'].items():
             self.players[client_id] = Player(
@@ -185,6 +227,10 @@ class Game:
                 player_data['position'],
                 player_data['status']
             )
+
+    def get_player(self):
+        ''' Get current player. '''
+        return self.players[str(self.client_id)]
 
 
 class GameClient:

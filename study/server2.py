@@ -20,7 +20,7 @@ def encode_msg(msg):
 def decode_msg(text):
     return json.loads(text)
 
-TICK_RATE = 32
+TICK_RATE = 30
 
 class Client:
     def __init__(self, id, socket, player_name):
@@ -59,6 +59,8 @@ class Game:
         self.players = {}
 
         self.running = True
+
+        print(f"Game initialized (tick rate {TICK_RATE})")
 
     def join(self, socket, name):
         #self.clients.append(Client(self.last_client_id, socket, name))
@@ -153,6 +155,7 @@ class Game:
                 'status': player.status
             }
 
+        game_state['tick'] = self.current_tick
         game_state['players'] = players
         return game_state
 
