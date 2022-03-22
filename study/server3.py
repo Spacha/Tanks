@@ -76,17 +76,24 @@ class GameObject:
     def key_up(self, keys):
         pass
 
+    #----------------------------------
+    #   MULTIPLAYER-SPECIFIC
+    #----------------------------------
+
+    def serialize(self):
+        pass
+
 
 class TankSprite:  # TODO: use pg.Sprite as a base!
     DIR_LEFT = GameObject.DIR_LEFT
     DIR_RIGHT = GameObject.DIR_RIGHT
 
-    def __init__(self):
+    def __init__(self, text=""):
+        self.text = text
         # BARREL: coordinates defined by the sprite image (in pixels)
         self.barrel_pos             = Vector(25, 24)    # sprite top-left position in the tank sprite
         self.barrel_pivot_pos       = Vector(2, 2)      # pivot position from top-left of the sprite
         self.barrel_pivot_offset    = Vector(11, 0)     # pivot offset from the sprite center (of rotation)
-
         self._initialize()
 
     def _initialize(self):
@@ -99,6 +106,7 @@ class TankSprite:  # TODO: use pg.Sprite as a base!
         # BARREL
         self.barrel_sprite = self.barrel_sprite_original.copy()
         self.barrel_rect = self.barrel_sprite.get_rect()
+
         self.set_direction(self.DIR_RIGHT)
 
     def set_direction(self, direction):
@@ -137,6 +145,9 @@ class Tank(GameObject):
     def initialize(self):
         super().initialize()
 
+        font = pg.font.SysFont("couriernew", 16)  # TODO: don't re-load every time...
+        self.name_text = font.render(self.name, True, pg.Color('white'))
+
     def update(self, delta):
         super().update(delta)
         self.barrel_angle_change = delta * self.barrel_angle_rate
@@ -147,7 +158,6 @@ class Tank(GameObject):
         elif self.barrel_angle > self.barrel_angle_max:
             self.barrel_angle = self.barrel_angle_max
 
-    # not used in the server
     def draw(self, scr):
         super().draw(scr)
 
@@ -157,6 +167,8 @@ class Tank(GameObject):
             self.sprite.set_direction(self.direction)
 
         scr.blit(self.sprite.surface, self.sprite.rect.move(self.position))
+        text_center = self.position + (self.sprite.rect.w / 2, self.sprite.rect.h + 10)
+        scr.blit(self.name_text, self.name_text.get_rect(center=text_center))  # TODO: should be in top layer (UI)
 
     def tick(self):
         super().tick()
@@ -174,15 +186,30 @@ class Tank(GameObject):
             self.velocity.x = 50
 
         if keys[pg.K_UP]:
-            self.barrel_angle_rate = 20
+            self.barrel_angle_rate = 30
         if keys[pg.K_DOWN]:
-            self.barrel_angle_rate = -20
+            self.barrel_angle_rate = -30
 
     def key_up(self, keys):
         if not (keys[pg.K_UP] or keys[pg.K_DOWN]):
             self.barrel_angle_rate = 0
         if not (keys[pg.K_LEFT] or keys[pg.K_RIGHT]):
             self.velocity.x = 0
+
+    #----------------------------------
+    #   MULTIPLAYER-SPECIFIC
+    #----------------------------------
+
+    def get_state(self):
+        state = {
+            # mostly static
+            'class':                'Tank',
+            'name':                 self.name,
+            # often changed
+            'barrel_angle':         self.barrel_angle,
+            'barrel_angle_rate':    self.barrel_angle_rate
+        }
+        
 
 # ------------------------------------------------------------------------------
 #
@@ -267,9 +294,6 @@ class Game:
         self.rx_queue = janus.Queue()
         self.send_message = lambda m, c: send_message_cb(self.room_key, m, c)
         self.future = None
-        self.clients = {}       # client: connection information, network-related
-        self._pending_clients = []   #
-        self.last_client_id = 0
 
         # Game stuff...
         pg.init()
@@ -282,8 +306,6 @@ class Game:
         self.clients = ObjectContainer()
         self.objects = ObjectContainer()
 
-        print(f"Game initialized (tick rate {TICK_RATE})")
-
     def initialize(self):
         self.objects.apply_pending_changes()
         self.running = True
@@ -292,10 +314,8 @@ class Game:
 
     def get_messages(self):
         messages = []
-
         while not self.rx_queue.sync_q.empty():
             messages.append(self.rx_queue.sync_q.get())
-
         return messages
 
     def run_loop(self):
@@ -318,9 +338,11 @@ class Game:
                     print(f"Received event from client {client_id}:", event['type'])
 
     def update(self):
+        # apply pending deletes and additions
         self.objects.apply_pending_changes()
 
-        pass
+        for obj_id, obj in self.objects.all():
+            obj.update(self.delta)
 
     def send_update(self, client=None):
         #self.tx_queue.sync_q.put({'type': 'test', 'tick': self.tick})
@@ -337,12 +359,15 @@ class Game:
         for obj_id, obj in self.objects.all():
             obj.tick()
 
-    def stop(self):
-        print("Stopping game.")
-        self.running = False
-        self.rx_queue.close()
-        #await self.rx_queue.wait_closed()
-        pg.quit()
+    def add_obj(self, obj):
+        obj_id = self.objects.add(obj)
+        obj.id = obj_id
+        # if already running, initialize immediately
+        if self.running:
+            obj.initialize()
+
+    def delete_obj(self, obj_id):
+        self.objects.delete(obj_id)
 
     #----------------------------------
     #   MULTIPLAYER-SPECIFIC
@@ -364,6 +389,13 @@ class Game:
         self.objects.delete(obj_id)
         self.clients.delete(client_id)
 
+    def stop(self):
+        print("Stopping game.")
+        self.running = False
+        self.rx_queue.close()
+        #await self.rx_queue.wait_closed()
+        pg.quit()
+
     def client_count(self):
         return len([c.id for c in self.clients.as_list() if not c.disconnected])
 
@@ -374,7 +406,10 @@ class Game:
 
     def get_game_state(self):
         game_state = {}
-        players = {}
+        objects = {}
+
+        for obj_id, obj in self.objects.all():
+            objects[obj_id] = obj.get_state()  # serialize object
         '''
         for client_id, player in self.players.items():
             players[client_id] = {
@@ -458,6 +493,7 @@ class GameServer:
     def game_thread(self, room_key):
         room = self.rooms[room_key]
         room.initialize()  # initialize the game...
+        print(f"Game initialized (tick rate {TICK_RATE})")
         try:
             while self.running and room.running:
                 self.rooms[room_key].run_loop()

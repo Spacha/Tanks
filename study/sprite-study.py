@@ -107,10 +107,10 @@ class Game:
 
     def initialize(self):
         self.objects.apply_pending_changes()
-        self.running = True
         for obj_id, obj in self.objects.all():
             print("initializing")
             obj.initialize()
+        self.running = True
 
     def run(self):
         self.initialize()
