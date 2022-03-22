@@ -142,6 +142,9 @@ class Tank(GameObject):
 
         self.sprite = TankSprite()
 
+        # MULTIPLAYER: which client this object belongs to
+        self.owner_id = None
+
     def initialize(self):
         super().initialize()
 
@@ -205,6 +208,8 @@ class Tank(GameObject):
         return {
             # mostly static
             'class':                'Tank',
+            'id':                   self.id,
+            'owner_id':             self.owner_id,
             'model':                'tank1',
             'name':                 self.name,
             # often changed
@@ -239,6 +244,8 @@ class ObjectContainer:
         return self._objs.items()
     def as_list(self):
         return self._objs.values()
+    def exists(self, obj_id):
+        return obj_id in self._objs
 
     def get(self, obj_id):
         try:
@@ -396,10 +403,12 @@ class Game:
     def join(self, socket, name):
         # add a client and tank (object) for the new player
         client = Client(socket, name)
-        client_id = self.clients.add( client )
-        object_id = self.objects.add( Tank(name, (50, 50)) )
+        obj = Tank(name, (50, 50))
+        client_id = self.clients.add(client)
         client.id = client_id
-        client.obj_id = object_id
+        obj.owner_id = client_id    # the object belongs to the client
+        self.add_obj(obj)
+        client.obj_id = obj.id
         return client
 
     def leave(self, client_id):

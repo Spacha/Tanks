@@ -66,6 +66,8 @@ class ObjectContainer:
         return self._objs.items()
     def as_list(self):
         return self._objs.values()
+    def exists(self, obj_id):
+        return obj_id in self._objs
 
     def get(self, obj_id):
         try:
@@ -79,6 +81,10 @@ class ObjectContainer:
         self._pending_addition.add((obj_id, obj))
         self.last_id += 1
         return obj_id
+
+    def replace(self, obj_id, obj):
+        # add object to queue and update ID
+        self._pending_addition.add((obj_id, obj))
 
     def delete(self, id):
         if type(id) is int:
@@ -144,25 +150,37 @@ class Game:
         # display-related...
         self.scr = pg.display.set_mode(self.scr_size)
         self.main_layer = pg.Surface(self.world_scale * self.scr_size)
+        self.hud_layer = pg.Surface(self.scr_size, flags=pg.SRCALPHA)
         self.screen_rect = self.main_layer.get_rect()
         self.WINDOW_CAPTION = "Sprite study"
         pg.display.set_caption(self.WINDOW_CAPTION)
+
+        # Main HUD font
+        self.hud_font = pg.font.SysFont("segoeui", 18)
 
         self.running = False
         self.mpos = None
         self.delta = 0.0
 
-        self.objects = ObjectContainer()
+        self.objects = ObjectContainer()        # replicated server objects
+        self.local_objects = ObjectContainer()  # local, non-public objects
 
     def initialize(self):
         self.objects.apply_pending_changes()
         for obj_id, obj in self.objects.all():
             obj.initialize()
 
+        # render static HUD elements
+        self.room_name_text = self.hud_font.render(f"Room: {self.room_key}", True, pg.Color('white'))
+        self.room_name_text_rect = self.room_name_text.get_rect().move(5,0)
+
         self.wait_for_join()
         self.running = True
 
     def run_loop(self):
+        # apply pending deletes and additions
+        self.objects.apply_pending_changes()
+
         self.check_events()
         self.update()  # for prediction, animations etc.
         self.send_update()
@@ -209,8 +227,6 @@ class Game:
                             self.delete_obj(obj_id)
 
     def update(self):
-        # apply pending deletes and additions
-        self.objects.apply_pending_changes()
 
         for obj_id, obj in self.objects.all():
             obj.update(self.delta)
@@ -223,12 +239,19 @@ class Game:
 
     def draw(self):
         self.main_layer.fill((112, 197, 255))
+        self.hud_layer.fill(0)
 
         for obj_id, obj in self.objects.all():
             obj.draw(self.main_layer)
 
-        self.scr.blit(pg.transform.scale(self.main_layer, self.scr_size), self.screen_rect)
+        self.draw_hud(self.hud_layer)
+
+        self.scr.blit(pg.transform.scale(self.main_layer, self.scr_size), self.screen_rect)     # draw world
+        self.scr.blit(self.hud_layer, self.screen_rect)                                         # draw HUD
         pg.display.flip()
+
+    def draw_hud(self, scr):
+        scr.blit(self.room_name_text, self.room_name_text_rect)
 
     def tick(self):
         self.delta = self.clock.tick(self.fps) / 1000
@@ -244,6 +267,13 @@ class Game:
         if self.running:
             obj.initialize()
 
+    def add_obj_with_id(self, obj_id, obj):
+        self.objects.replace(obj_id, obj)
+        # if already running, initialize immediately
+        print("Running:", self.running)
+        if self.running:
+            obj.initialize()
+
     def delete_obj(self, obj_id):
         self.objects.delete(obj_id)
 
@@ -253,11 +283,14 @@ class Game:
 
     def wait_for_join(self):
         while not self.joined:
-            self.check_server_events()
             time.sleep(0.25)
 
         if self.client_id is not None:
             print(f"Joined. Client ID: {self.client_id}")
+
+    def join(self, client_id):
+        self.client_id = client_id  # get current player's client id
+        self.joined = True
 
     def get_messages(self):
         messages = []
@@ -271,16 +304,32 @@ class Game:
             return
 
         for message in messages:
-            print("Received:", message)
-            if message['type'] == 'joined':
-                self.client_id = message['client_id']  # get current player's client id
-                self.joined = True
-            '''
-            if message['type'] == 'game_event':
-                for event in message['events']:
-                    client_id = message['client_id']
-                    print(f"Received event from client {client_id}:", event['type'])
-            '''
+            #print("Received:", message)
+            if message['type'] == 'game_state':
+                state = message['state']
+
+                # Object state update
+                if 'objects' in state:
+                    for obj_id, obj_state in state['objects'].items():
+                        if not self.objects.exists(obj_id):
+                            # create new object of type
+                            print("Found new object from server!")
+                            obj = None
+                            if obj_state['class'] == 'Tank':
+                                obj = Tank(obj_state['name'], obj_state['position'])
+                                obj.owner_id = obj_state['owner_id']
+                                obj.owned_by_player = obj_state['owner_id'] == self.client_id
+                                obj.update_state(obj_state)
+                            else:
+                                raise Exception("Unknown class received!")
+
+                            self.add_obj_with_id(obj_id, obj)
+                        else:
+                            # update existing object
+                            obj = self.objects.get(obj_id)
+                            obj.update_state(obj_state)
+
+
 
     def send_event(self, event):
         self.send_message({
@@ -352,7 +401,11 @@ class GameObject:
     #----------------------------------
 
     def update_state(self, state):
-        pass
+        # static: class, id, model, name
+        self.position       = Vector(state['position'])
+        self.direction      = Vector(state['direction'])
+        self.barrel_angle   = float(state['barrel_angle'])
+        #print(f"Updated object's ({self.name}) state.")
 
 
 class TankSprite:  # TODO: use pg.Sprite as a base!
@@ -413,11 +466,17 @@ class Tank(GameObject):
 
         self.sprite = TankSprite()
 
+        self.owned_by_player = False    # MULTIPLAYER: whether this belongs to the current player
+        self.owner_id = None            # MULTIPLAYER: which client this object belongs to
+
     def initialize(self):
         super().initialize()
 
-        font = pg.font.SysFont("couriernew", 16)  # TODO: don't re-load every time...
-        self.name_text = font.render(self.name, True, pg.Color('white'))
+        color = pg.Color('red') if self.owned_by_player else pg.Color('white')
+
+        #font = pg.font.SysFont("couriernew", 16)  # TODO: don't re-load every time...
+        font = pg.font.SysFont("segoeui", 14)  # TODO: don't re-load every time...
+        self.name_text = font.render(self.name, True, color)
 
     def update(self, delta):
         super().update(delta)
@@ -584,7 +643,12 @@ class GameClient:
                 message = decode_msg(message_raw)
 
                 if self.game:  # room is already up...
-                    await self.game.rx_queue.async_q.put(message)
+                    if self.game.joined:  # client is ready to receive
+                        await self.game.rx_queue.async_q.put(message)
+                    else:  # wait for join
+                        if message['type'] == 'joined':
+                            self.game.join(message['client_id'])
+
 
         except websockets.exceptions.ConnectionClosedError:
             print("Server closed connection during receive.")
@@ -615,12 +679,21 @@ class GameClient:
 
 
 if __name__ == "__main__":
-    room_key = "test-room"
-    player_name = "Spacha"
+    print("-----------------")
+    print("Welcome to Tanks!")
+    print("-----------------")
+    room_key = input("Room: ")
+    player_name = input("Nickname: ")
 
-    client = GameClient('localhost', 8765)
-    client.set_connection_info(room_key, player_name)
-    client.run()
+    if len(room_key) == 0 or len(room_key) == 0:
+        print("Invalid nickname or room!")
+    else:
+        #room_key = "test-room"
+        #player_name = "Spacha"
+
+        client = GameClient('localhost', 8765)
+        client.set_connection_info(room_key, player_name)
+        client.run()
 
 '''
 if __name__ == '__main__':
