@@ -12,7 +12,7 @@ def decode_msg(text):
     return json.loads(text)
 
 #TICK_RATE = 1  # must match with the server
-WIDTH, HEIGHT = (640, 320)
+WIDTH, HEIGHT = (960, 540)
 FPS = 60
 
 TANK_MODELS = [

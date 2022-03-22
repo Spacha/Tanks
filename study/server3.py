@@ -211,7 +211,6 @@ class Tank(GameObject):
             self.barrel_angle_rate = -30
 
     def key_up(self, released):
-        print("Released:", released)
         if pg.K_UP in released or pg.K_DOWN in released:
             self.barrel_angle_rate = 0
         if pg.K_LEFT in released or pg.K_RIGHT in released:
@@ -359,12 +358,9 @@ class Game:
             return
 
         for message in messages:
-            print("Received:", message)
             if message['type'] == 'game_event':
-
                 for event in message['events']:
                     client_id = message['client_id']
-                    print(f"Received event from client {client_id}:", event['type'])
                     event_type = event['type']
 
                     client = self.clients.get(client_id)
