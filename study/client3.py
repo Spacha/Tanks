@@ -1,8 +1,10 @@
 import asyncio, websockets, json, time
 from contextlib import suppress
-import sys, traceback
+import sys, os, traceback
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 import pygame as pg
 import janus
+import random
 
 def encode_msg(msg):
     return json.dumps(msg, ensure_ascii=False)
@@ -12,6 +14,14 @@ def decode_msg(text):
 #TICK_RATE = 1  # must match with the server
 WIDTH, HEIGHT = (640, 320)
 FPS = 60
+
+TANK_MODELS = [
+    "tank1_blue",
+    "tank1_red",
+    "tank1_green",
+    #"tank2_green",
+    #"tank2_black",
+]
 
 class GameEvent:
     def __init__(self):
@@ -141,7 +151,7 @@ class Game:
         self.fps = FPS
 
         # World
-        self.world_scale = 1
+        self.world_scale = 1.5
         self.world_size = self.scr_size * self.world_scale
 
         # Init pygame
@@ -152,8 +162,9 @@ class Game:
         self.main_layer = pg.Surface(self.world_scale * self.scr_size)
         self.hud_layer = pg.Surface(self.scr_size, flags=pg.SRCALPHA)
         self.screen_rect = self.main_layer.get_rect()
-        self.WINDOW_CAPTION = "Sprite study"
+        self.WINDOW_CAPTION = "Tanks!"
         pg.display.set_caption(self.WINDOW_CAPTION)
+        self.scr_update_rects = [self.scr.get_rect()]
 
         # Main HUD font
         self.hud_font = pg.font.SysFont("segoeui", 18)
@@ -164,6 +175,7 @@ class Game:
 
         self.objects = ObjectContainer()        # replicated server objects
         self.local_objects = ObjectContainer()  # local, non-public objects
+
 
     def initialize(self):
         self.objects.apply_pending_changes()
@@ -219,7 +231,7 @@ class Game:
             elif event.type == pg.MOUSEBUTTONDOWN:
                 if event.button == 1:
                     # add a random player to the mouse position
-                    self.add_obj(Tank(f"Player {self.objects.last_id + 2}", self.mpos_world))
+                    self.add_obj(Tank(f"Dummy {self.objects.last_id + 2}", self.mpos_world))
                 if event.button == 3:
                     # delete non-controllable player if mouse hits it (them)
                     for obj_id, obj in self.objects.all():
@@ -241,17 +253,22 @@ class Game:
         self.main_layer.fill((112, 197, 255))
         self.hud_layer.fill(0)
 
+        # TODO: pass update-rect and convert to screen coordinates!
         for obj_id, obj in self.objects.all():
             obj.draw(self.main_layer)
 
         self.draw_hud(self.hud_layer)
 
-        self.scr.blit(pg.transform.scale(self.main_layer, self.scr_size), self.screen_rect)     # draw world
+        self.scr.blit(pg.transform.smoothscale(self.main_layer, self.scr_size), self.screen_rect)     # draw world
         self.scr.blit(self.hud_layer, self.screen_rect)                                         # draw HUD
-        pg.display.flip()
+
+        pg.display.update(self.scr_update_rects)
+
+        #self.scr_update_rects = []  # empty update list?
 
     def draw_hud(self, scr):
         scr.blit(self.room_name_text, self.room_name_text_rect)
+        #update_rects.append(self.room_name_text_rect)
 
     def tick(self):
         self.delta = self.clock.tick(self.fps) / 1000
@@ -270,7 +287,6 @@ class Game:
     def add_obj_with_id(self, obj_id, obj):
         self.objects.replace(obj_id, obj)
         # if already running, initialize immediately
-        print("Running:", self.running)
         if self.running:
             obj.initialize()
 
@@ -313,10 +329,9 @@ class Game:
                     for obj_id, obj_state in state['objects'].items():
                         if not self.objects.exists(obj_id):
                             # create new object of type
-                            print("Found new object from server!")
                             obj = None
                             if obj_state['class'] == 'Tank':
-                                obj = Tank(obj_state['name'], obj_state['position'])
+                                obj = Tank(obj_state['name'], obj_state['position'], obj_state['model'])
                                 obj.owner_id = obj_state['owner_id']
                                 obj.owned_by_player = obj_state['owner_id'] == self.client_id
                                 obj.update_state(obj_state)
@@ -412,17 +427,24 @@ class TankSprite:  # TODO: use pg.Sprite as a base!
     DIR_LEFT = GameObject.DIR_LEFT
     DIR_RIGHT = GameObject.DIR_RIGHT
 
-    def __init__(self, text=""):
+    def __init__(self, text="", model=None):
         self.text = text
+        self.model = model
         # BARREL: coordinates defined by the sprite image (in pixels)
         self.barrel_pos             = Vector(25, 24)    # sprite top-left position in the tank sprite
         self.barrel_pivot_pos       = Vector(2, 2)      # pivot position from top-left of the sprite
         self.barrel_pivot_offset    = Vector(11, 0)     # pivot offset from the sprite center (of rotation)
+
+        if self.model is None:
+            self.model = random.choice(TANK_MODELS)
         self._initialize()
 
     def _initialize(self):
-        self.sprite_right_original = pg.image.load("tank1_base.png")  # preserve the original for re-blit
-        self.barrel_sprite_original = pg.image.load("tank1_barrel.png")
+        base_path = os.path.join('img', f"{self.model}_base.png")
+        barrel_path = os.path.join('img', f"{self.model}_barrel.png")
+        # preserve the originals for re-blit
+        self.sprite_right_original = pg.image.load(base_path)
+        self.barrel_sprite_original = pg.image.load(barrel_path)
         # BODY
         self.sprite_right = self.sprite_right_original.copy()
         self.sprite_left = pg.transform.flip(self.sprite_right_original, True, False)
@@ -453,7 +475,7 @@ class TankSprite:  # TODO: use pg.Sprite as a base!
 
 
 class Tank(GameObject):
-    def __init__(self, name, position):
+    def __init__(self, name, position, model=None):
         super().__init__(position)
         self.name = name
         self.barrel_angle = 0                       # how it is currently positioned
@@ -464,7 +486,7 @@ class Tank(GameObject):
         self.prev_barrel_angle = self.barrel_angle  # what was the previous value
         self.barrel_angle_changed = True            # was the value just changed
 
-        self.sprite = TankSprite()
+        self.sprite = TankSprite(model)
 
         self.owned_by_player = False    # MULTIPLAYER: whether this belongs to the current player
         self.owner_id = None            # MULTIPLAYER: which client this object belongs to
@@ -497,9 +519,15 @@ class Tank(GameObject):
         if self.direction_changed:
             self.sprite.set_direction(self.direction)
 
-        scr.blit(self.sprite.surface, self.sprite.rect.move(self.position))
+
         text_center = self.position + (self.sprite.rect.w / 2, self.sprite.rect.h + 10)
-        scr.blit(self.name_text, self.name_text.get_rect(center=text_center))  # TODO: should be in top layer (UI)
+        sprite_rect = self.sprite.rect.move(self.position)
+        name_text_rect = self.name_text.get_rect(center=text_center)
+
+        scr.blit(self.sprite.surface, sprite_rect)
+        scr.blit(self.name_text, name_text_rect)  # TODO: should be in top layer (UI)
+
+        #update_rects += [self.sprite.rect.move(self.prev_position), sprite_rect, name_text_rect]
 
     def tick(self):
         super().tick()
@@ -601,6 +629,8 @@ class GameClient:
                     self.game.stop()
                 await self.game_future
 
+        except ConnectionRefusedError:
+            print("> Could not reach server. Is it up?")
         except BaseException as e:
             self.stop(e)
 
@@ -655,7 +685,8 @@ class GameClient:
             if self.running:
                 self.stop()
         except BaseException as e:
-            print("Recv thread exited on exception:", e)
+            if e is not KeyboardInterrupt:
+                print("Recv thread exited on exception:", e)
 
         self.game.rx_queue.close()
 
@@ -670,7 +701,7 @@ class GameClient:
 
             try:
                 await socket.send( encode_msg(message) )
-            except websockets.ConnectionClosed:
+            except websockets.exceptions.ConnectionClosed:
                 print("Server closed connection during send.")
                 if self.running:
                     self.stop()

@@ -9,7 +9,9 @@ Server:
 '''
 import asyncio, websockets, json, time
 from contextlib import suppress
-import sys, traceback
+import sys, os, traceback
+import random
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 import pygame as pg
 from pygame.math import Vector2 as Vector
 import janus
@@ -22,6 +24,14 @@ def decode_msg(text):
     return json.loads(text)
 
 TICK_RATE = 30
+
+TANK_MODELS = [
+    "tank1_blue",
+    "tank1_red",
+    "tank1_green",
+    #"tank2_green",
+    #"tank2_black",
+]
 
 class GameObject:
     DIR_LEFT  = -Vector(1,0)
@@ -88,17 +98,24 @@ class TankSprite:  # TODO: use pg.Sprite as a base!
     DIR_LEFT = GameObject.DIR_LEFT
     DIR_RIGHT = GameObject.DIR_RIGHT
 
-    def __init__(self, text=""):
+    def __init__(self, text="", model=None):
         self.text = text
+        self.model = model
         # BARREL: coordinates defined by the sprite image (in pixels)
         self.barrel_pos             = Vector(25, 24)    # sprite top-left position in the tank sprite
         self.barrel_pivot_pos       = Vector(2, 2)      # pivot position from top-left of the sprite
         self.barrel_pivot_offset    = Vector(11, 0)     # pivot offset from the sprite center (of rotation)
+
+        if self.model is None:
+            self.model = random.choice(TANK_MODELS)
         self._initialize()
 
     def _initialize(self):
-        self.sprite_right_original = pg.image.load("tank1_base.png")  # preserve the original for re-blit
-        self.barrel_sprite_original = pg.image.load("tank1_barrel.png")
+        base_path = os.path.join('img', f"{self.model}_base.png")
+        barrel_path = os.path.join('img', f"{self.model}_barrel.png")
+        # preserve the originals for re-blit
+        self.sprite_right_original = pg.image.load(base_path)
+        self.barrel_sprite_original = pg.image.load(barrel_path)
         # BODY
         self.sprite_right = self.sprite_right_original.copy()
         self.sprite_left = pg.transform.flip(self.sprite_right_original, True, False)
@@ -129,7 +146,7 @@ class TankSprite:  # TODO: use pg.Sprite as a base!
 
 
 class Tank(GameObject):
-    def __init__(self, name, position):
+    def __init__(self, name, position, model=None):
         super().__init__(position)
         self.name = name
         self.barrel_angle = 0                       # how it is currently positioned
@@ -140,7 +157,7 @@ class Tank(GameObject):
         self.prev_barrel_angle = self.barrel_angle  # what was the previous value
         self.barrel_angle_changed = True            # was the value just changed
 
-        self.sprite = TankSprite()
+        self.sprite = TankSprite(model)
 
         # MULTIPLAYER: which client this object belongs to
         self.owner_id = None
@@ -210,7 +227,7 @@ class Tank(GameObject):
             'class':                'Tank',
             'id':                   self.id,
             'owner_id':             self.owner_id,
-            'model':                'tank1',
+            'model':                self.sprite.model,
             'name':                 self.name,
             # often changed
             'position':             tuple(self.position),
@@ -401,11 +418,14 @@ class Game:
     #----------------------------------
 
     def join(self, socket, name):
+        def next_tank_model(client_id):
+            return TANK_MODELS[client_id % len(TANK_MODELS)]
         # add a client and tank (object) for the new player
         client = Client(socket, name)
-        obj = Tank(name, (50, 50))
         client_id = self.clients.add(client)
         client.id = client_id
+        # create tank for the client
+        obj = Tank(name, (50, 50), next_tank_model(client_id))
         obj.owner_id = client_id    # the object belongs to the client
         self.add_obj(obj)
         client.obj_id = obj.id
