@@ -29,10 +29,8 @@ class GameEvent:
     def as_dict(self):
         events = []
         for type, value in self.events:
-            #events.append({'type': type, 'value': value})
-            if type == 'move':
-                # move_left, move_right, move_stop
-                events.append({'type': f"{type}_{value}"})
+            events.append({'type': type, 'value': value})
+
         return events
 
 
@@ -129,7 +127,7 @@ class Game:
         self.player_name = player_name
         self.client_id = None
         self.rx_queue = rx_queue
-        self.send_message = lambda m: send_message_cb(self.room_key, m)
+        self.send_message = lambda m: send_message_cb(m)
         self.joined = False
         self.server_tick = 0
 
@@ -172,7 +170,9 @@ class Game:
         self.tick()
 
     def check_events(self):
-        self.check_server_events()  # MULTIPLAYER-SPECIFIC
+        # MULTIPLAYER-SPECIFIC
+        self.check_server_events()
+        self.update_event = GameEvent()  # will contain updates to be sent to the server
 
         for event in pg.event.get():
             if event.type == pg.QUIT:
@@ -186,17 +186,12 @@ class Game:
                 if keys[pg.K_q]:
                     self.running = False
 
-                # relay keyboard events to all controllable game objects
-                for obj_id, obj in self.objects.all():
-                    if obj.controllable:
-                        obj.key_down(keys)
+                self.update_event.add('KEYDOWN', event.key)
 
             elif event.type == pg.KEYUP:
                 keys = pg.key.get_pressed()
-                # relay keyboard events to all controllable game objects
-                for obj_id, obj in self.objects.all():
-                    if obj.controllable:
-                        obj.key_up(keys)
+
+                self.update_event.add('KEYUP', event.key)
 
             elif event.type == pg.MOUSEMOTION:
                 self.mpos = Vector(event.pos)
@@ -219,6 +214,12 @@ class Game:
 
         for obj_id, obj in self.objects.all():
             obj.update(self.delta)
+
+    def send_update(self):
+        if self.update_event.empty():
+            return
+
+        self.send_event(self.update_event)
 
     def draw(self):
         self.main_layer.fill((112, 197, 255))
@@ -280,6 +281,11 @@ class Game:
                     client_id = message['client_id']
                     print(f"Received event from client {client_id}:", event['type'])
             '''
+
+    def send_event(self, event):
+        self.send_message({
+            'type': 'game_event',
+            'events': event.as_dict()})
 
     def stop(self):
         self.running = False
