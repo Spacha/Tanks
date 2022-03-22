@@ -1,3 +1,4 @@
+import time
 import pygame as pg
 from pygame.math import Vector2 as Vector
 
@@ -117,13 +118,17 @@ class Game:
                 if keys[pg.K_q]:
                     self.running = False
 
+                # relay keyboard events to all controllable game objects
                 for obj_id, obj in self.objects.all():
-                    obj.key_down(keys)
+                    if obj.controllable:
+                        obj.key_down(keys)
 
             elif event.type == pg.KEYUP:
                 keys = pg.key.get_pressed()
+                # relay keyboard events to all controllable game objects
                 for obj_id, obj in self.objects.all():
-                    obj.key_up(keys)
+                    if obj.controllable:
+                        obj.key_up(keys)
 
             elif event.type == pg.MOUSEMOTION:
                 self.mpos = Vector(event.pos)
@@ -172,6 +177,7 @@ class GameObject:
         self.position = Vector(position)
         self.velocity = Vector(0, 0)
         self.direction = self.DIR_RIGHT
+        self.controllable = False
         
         # status tracking
         self.prev_position = self.position
@@ -184,13 +190,14 @@ class GameObject:
         pass
 
     def update(self, delta):
+        self.position += delta * self.velocity
+
         # for directional game objects
         if self.position.x < self.prev_position.x:
             self.direction = self.DIR_LEFT
         elif self.position.x > self.prev_position.x:
             self.direction = self.DIR_RIGHT
 
-        self.position += delta * self.velocity
 
     def draw(self, scr):
         pass
@@ -201,9 +208,13 @@ class GameObject:
         self.direction_changed = self.direction != self.prev_direction
 
         # update previous...
-        self.prev_position = self.position
+        self.prev_position = self.position.copy()
         self.prev_direction = self.direction
 
+    # Controls
+
+    def set_as_player(self):
+        self.controllable = True
     def key_down(self, keys):
         pass
     def key_up(self, keys):
@@ -234,19 +245,12 @@ class TankSprite:  # TODO: use pg.Sprite as a base!
         self.barrel_rect = self.barrel_sprite.get_rect()
         self.set_direction(self.DIR_RIGHT)
 
-    def move(self, position_change):
-        self.rect.move_ip(position_change)
-
     def set_direction(self, direction):
         self.direction = direction
-        self.update_current()
+        self.update_surface()
 
-    def update_current(self):
-        self._sprite = self.sprite_left if (self.direction == self.DIR_LEFT) else self.sprite_right
-
-    def draw(self, scr):
-        #print(self.sprite_rect)
-        scr.blit(self._sprite, self.rect)
+    def update_surface(self):
+        self.surface = self.sprite_left if (self.direction == self.DIR_LEFT) else self.sprite_right
 
     def rotate_barrel(self, new_angle):
         def rotated_barrel_sprite(angle):
@@ -257,14 +261,18 @@ class TankSprite:  # TODO: use pg.Sprite as a base!
         self.sprite_right = self.sprite_right_original.copy()
         self.sprite_right.blit(self.barrel_sprite, self.barrel_rect)  # with barrel already in place
         self.sprite_left = pg.transform.flip(self.sprite_right, True, False)
-        self.update_current()
+        self.update_surface()
 
 
 class Tank(GameObject):
     def __init__(self, position):
         super().__init__(position)
+        self.controllable = False
+
         self.barrel_angle = 0                       # how it is currently positioned
         self.barrel_angle_rate = 0                  # how fast is currently changing
+        self.barrel_angle_min = -10
+        self.barrel_angle_max = 70
 
         self.prev_barrel_angle = self.barrel_angle  # what was the previous value
         self.barrel_angle_changed = True            # was the value just changed
@@ -279,18 +287,20 @@ class Tank(GameObject):
         self.barrel_angle_change = delta * self.barrel_angle_rate
         self.barrel_angle += self.barrel_angle_change
 
+        if self.barrel_angle < self.barrel_angle_min:
+            self.barrel_angle = self.barrel_angle_min
+        elif self.barrel_angle > self.barrel_angle_max:
+            self.barrel_angle = self.barrel_angle_max
+
     def draw(self, scr):
         super().draw(scr)
 
-        #if self.position_changed:
-        #    self.sprite.move(self.position_change)
         if self.barrel_angle_changed:
             self.sprite.rotate_barrel(self.barrel_angle)
         if self.direction_changed:
             self.sprite.set_direction(self.direction)
 
-        #self.sprite.draw(scr)
-        scr.blit(self.sprite._sprite, self.sprite.rect.move(self.position))
+        scr.blit(self.sprite.surface, self.sprite.rect.move(self.position))
 
     def tick(self):
         super().tick()
@@ -316,10 +326,11 @@ class Tank(GameObject):
             self.velocity.x = 0
 
 
-
 if __name__ == '__main__':
-    game = Game((640, 320), 60)
-    game.add_obj(Tank((50,50)))
+    game = Game((640, 320), 200)
+    player_tank = Tank((50,50))
+    player_tank.set_as_player()
+    game.add_obj(player_tank)
 
     game.initialize()
     game.run()
