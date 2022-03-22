@@ -133,7 +133,6 @@ class Game():
                 return obj
         return None
         
-
     def ui_write(self, text_str, x, y):
         """
             A small helper to write UI text on the screen.
