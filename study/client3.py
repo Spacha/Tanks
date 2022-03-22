@@ -1,8 +1,8 @@
-import asyncio, websockets, json, time
+import asyncio, websockets, json, time, sys, os, traceback
 from contextlib import suppress
-import sys, os, traceback
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 import pygame as pg
+from pygame.math import Vector2 as Vector
 import janus
 import random
 
@@ -22,6 +22,7 @@ TANK_MODELS = [
     #"tank2_green",
     #"tank2_black",
 ]
+
 
 class GameEvent:
     def __init__(self):
@@ -43,12 +44,6 @@ class GameEvent:
 
         return events
 
-
-
-
-import time
-import pygame as pg
-from pygame.math import Vector2 as Vector
 
 def rotate(surface, angle, pivot, offset):
     """Rotate the surface around the pivot point.
@@ -162,6 +157,7 @@ class Game:
         self.main_layer = pg.Surface(self.world_scale * self.scr_size)
         self.hud_layer = pg.Surface(self.scr_size, flags=pg.SRCALPHA)
         self.screen_rect = self.main_layer.get_rect()
+        
         self.WINDOW_CAPTION = "Tanks!"
         pg.display.set_caption(self.WINDOW_CAPTION)
         self.scr_update_rects = [self.scr.get_rect()]
@@ -239,7 +235,6 @@ class Game:
                             self.delete_obj(obj_id)
 
     def update(self):
-
         for obj_id, obj in self.objects.all():
             obj.update(self.delta)
 
@@ -259,8 +254,8 @@ class Game:
 
         self.draw_hud(self.hud_layer)
 
-        self.scr.blit(pg.transform.smoothscale(self.main_layer, self.scr_size), self.screen_rect)     # draw world
-        self.scr.blit(self.hud_layer, self.screen_rect)                                         # draw HUD
+        self.scr.blit(pg.transform.smoothscale(self.main_layer, self.scr_size), self.screen_rect)   # draw world
+        self.scr.blit(self.hud_layer, self.screen_rect)                                             # draw HUD
 
         pg.display.update(self.scr_update_rects)
 

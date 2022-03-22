@@ -7,14 +7,13 @@ Server:
         3. Send thread (producer). Waits messages to appear to the send buffer
            and sends them to the client(s).
 '''
-import asyncio, websockets, json, time
+import asyncio, websockets, json, time, sys, os, traceback
 from contextlib import suppress
-import sys, os, traceback
-import random
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 import pygame as pg
 from pygame.math import Vector2 as Vector
 import janus
+import random
 
 from random import randint
 
@@ -347,6 +346,9 @@ class Game:
         return messages
 
     def run_loop(self):
+        # apply pending deletes and additions
+        self.objects.apply_pending_changes()
+
         self.check_events()
         self.update()
         self.send_update()
@@ -378,9 +380,6 @@ class Game:
 
 
     def update(self):
-        # apply pending deletes and additions
-        self.objects.apply_pending_changes()
-
         for obj_id, obj in self.objects.all():
             obj.update(self.delta)
 
