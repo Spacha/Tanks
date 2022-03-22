@@ -24,8 +24,8 @@ def decode_msg(text):
 TICK_RATE = 30
 
 class GameObject:
-    DIR_LEFT  = Vector(1,0)
-    DIR_RIGHT = -Vector(1,0)
+    DIR_LEFT  = -Vector(1,0)
+    DIR_RIGHT = Vector(1,0)
 
     def __init__(self, position):
         self.position = Vector(position)
@@ -134,8 +134,8 @@ class Tank(GameObject):
         self.name = name
         self.barrel_angle = 0                       # how it is currently positioned
         self.barrel_angle_rate = 0                  # how fast is currently changing
-        self.barrel_angle_min = -10
-        self.barrel_angle_max = 70
+        self.barrel_angle_min = -10.0
+        self.barrel_angle_max = 70.0
 
         self.prev_barrel_angle = self.barrel_angle  # what was the previous value
         self.barrel_angle_changed = True            # was the value just changed
@@ -179,21 +179,22 @@ class Tank(GameObject):
     def bounding_box(self):
         return self.sprite.surface.get_bounding_rect().move(self.position)
 
-    def key_down(self, keys):
-        if keys[pg.K_LEFT]:
+    def key_down(self, pressed):
+        if pg.K_LEFT in pressed:
             self.velocity.x = -50
-        if keys[pg.K_RIGHT]:
+        if pg.K_RIGHT in pressed:
             self.velocity.x = 50
 
-        if keys[pg.K_UP]:
+        if pg.K_UP in pressed:
             self.barrel_angle_rate = 30
-        if keys[pg.K_DOWN]:
+        if pg.K_DOWN in pressed:
             self.barrel_angle_rate = -30
 
-    def key_up(self, keys):
-        if not (keys[pg.K_UP] or keys[pg.K_DOWN]):
+    def key_up(self, released):
+        print("Released:", released)
+        if pg.K_UP in released or pg.K_DOWN in released:
             self.barrel_angle_rate = 0
-        if not (keys[pg.K_LEFT] or keys[pg.K_RIGHT]):
+        if pg.K_LEFT in released or pg.K_RIGHT in released:
             self.velocity.x = 0
 
     #----------------------------------
@@ -201,13 +202,17 @@ class Tank(GameObject):
     #----------------------------------
 
     def get_state(self):
-        state = {
+        return {
             # mostly static
             'class':                'Tank',
+            'model':                'tank1',
             'name':                 self.name,
             # often changed
+            'position':             tuple(self.position),
+            'direction':            tuple(self.direction),
             'barrel_angle':         self.barrel_angle,
-            'barrel_angle_rate':    self.barrel_angle_rate
+            #'velocity':             tuple(self.velocity),
+            #'barrel_angle_rate':    self.barrel_angle_rate
         }
         
 
@@ -336,6 +341,21 @@ class Game:
                 for event in message['events']:
                     client_id = message['client_id']
                     print(f"Received event from client {client_id}:", event['type'])
+                    event_type = event['type']
+
+                    client = self.clients.get(client_id)
+                    player = self.objects.get(client.obj_id)
+
+                    # type: KEYDOWN, value: key
+                    if event_type == 'KEYDOWN':
+                        key = event['value']
+                        player.key_down([key])
+
+                    # type: KEYUP, value: key
+                    elif event_type == 'KEYUP':
+                        key = event['value']
+                        player.key_up([key])
+
 
     def update(self):
         # apply pending deletes and additions
@@ -396,9 +416,6 @@ class Game:
         #await self.rx_queue.wait_closed()
         pg.quit()
 
-    def client_count(self):
-        return len([c.id for c in self.clients.as_list() if not c.disconnected])
-
     def send_absolute_update(self, client=None):
         #self.tx_queue.sync_q.put({'type': 'test', 'tick': self.tick})
         message = {'type': 'game_state', 'state': self.get_game_state()}
@@ -410,6 +427,7 @@ class Game:
 
         for obj_id, obj in self.objects.all():
             objects[obj_id] = obj.get_state()  # serialize object
+        game_state['objects'] = objects
         '''
         for client_id, player in self.players.items():
             players[client_id] = {
@@ -422,6 +440,9 @@ class Game:
         game_state['players'] = players
         '''
         return game_state
+
+    def client_count(self):
+        return len([c.id for c in self.clients.as_list() if not c.disconnected])
 
 class GameServer:
     def __init__(self, host, port):

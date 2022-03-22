@@ -164,7 +164,7 @@ class Game:
 
     def run_loop(self):
         self.check_events()
-        #self.update()  # for prediction, animations etc.
+        self.update()  # for prediction, animations etc.
         self.send_update()
         self.draw()
         self.tick()
@@ -295,8 +295,8 @@ class Game:
 
 
 class GameObject:
-    DIR_LEFT  = Vector(1,0)
-    DIR_RIGHT = -Vector(1,0)
+    DIR_LEFT  = -Vector(1,0)
+    DIR_RIGHT = Vector(1,0)
 
     def __init__(self, position):
         self.position = Vector(position)
@@ -405,8 +405,8 @@ class Tank(GameObject):
         self.name = name
         self.barrel_angle = 0                       # how it is currently positioned
         self.barrel_angle_rate = 0                  # how fast is currently changing
-        self.barrel_angle_min = -10
-        self.barrel_angle_max = 70
+        self.barrel_angle_min = -10.0
+        self.barrel_angle_max = 70.0
 
         self.prev_barrel_angle = self.barrel_angle  # what was the previous value
         self.barrel_angle_changed = True            # was the value just changed
@@ -421,6 +421,7 @@ class Tank(GameObject):
 
     def update(self, delta):
         super().update(delta)
+
         self.barrel_angle_change = delta * self.barrel_angle_rate
         self.barrel_angle += self.barrel_angle_change
 
