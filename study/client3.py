@@ -77,7 +77,7 @@ class ObjectContainer:
     def as_list(self):
         return self._objs.values()
     def exists(self, obj_id):
-        return obj_id in self._objs
+        return obj_id in self._objs and obj_id not in self._pending_addition
 
     def get(self, obj_id):
         try:
@@ -97,12 +97,12 @@ class ObjectContainer:
         self._pending_addition.add((obj_id, obj))
 
     def delete(self, id):
-        if type(id) is int:
+        if type(id) is int or id.isdigit():  # numeric string is allowed
             self._pending_delete.add(id)
         elif type(id) is list:
             self._pending_delete.update(id)
         else:
-            raise ValueError('Object ID must be integer!')
+            raise ValueError('Object ID must be numeric!')
 
     def count(self):
         # TODO: ignore pending deletes?
@@ -326,6 +326,12 @@ class Game:
 
                 # Object state update
                 if 'objects' in state:
+                    # first, delete objects that were not in the update (left, probably)...
+                    for obj_id, obj in self.objects.all():
+                        if obj_id not in state['objects']:
+                            self.objects.delete(obj_id)
+
+                    # ...then update existing and add new ones
                     for obj_id, obj_state in state['objects'].items():
                         if not self.objects.exists(obj_id):
                             # create new object of type
@@ -427,8 +433,7 @@ class TankSprite:  # TODO: use pg.Sprite as a base!
     DIR_LEFT = GameObject.DIR_LEFT
     DIR_RIGHT = GameObject.DIR_RIGHT
 
-    def __init__(self, text="", model=None):
-        self.text = text
+    def __init__(self, model=None):
         self.model = model
         # BARREL: coordinates defined by the sprite image (in pixels)
         self.barrel_pos             = Vector(25, 24)    # sprite top-left position in the tank sprite
@@ -488,8 +493,8 @@ class Tank(GameObject):
 
         self.sprite = TankSprite(model)
 
-        self.owned_by_player = False    # MULTIPLAYER: whether this belongs to the current player
-        self.owner_id = None            # MULTIPLAYER: which client this object belongs to
+        self.owned_by_player = False                # MULTIPLAYER: whether this belongs to the current player
+        self.owner_id = None                        # MULTIPLAYER: which client this object belongs to
 
     def initialize(self):
         super().initialize()
@@ -525,7 +530,7 @@ class Tank(GameObject):
         name_text_rect = self.name_text.get_rect(center=text_center)
 
         scr.blit(self.sprite.surface, sprite_rect)
-        scr.blit(self.name_text, name_text_rect)  # TODO: should be in top layer (UI)
+        scr.blit(self.name_text, name_text_rect)  # TODO: should be in top layer (UI) -> no scaling issues
 
         #update_rects += [self.sprite.rect.move(self.prev_position), sprite_rect, name_text_rect]
 

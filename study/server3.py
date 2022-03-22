@@ -98,8 +98,7 @@ class TankSprite:  # TODO: use pg.Sprite as a base!
     DIR_LEFT = GameObject.DIR_LEFT
     DIR_RIGHT = GameObject.DIR_RIGHT
 
-    def __init__(self, text="", model=None):
-        self.text = text
+    def __init__(self, model=None):
         self.model = model
         # BARREL: coordinates defined by the sprite image (in pixels)
         self.barrel_pos             = Vector(25, 24)    # sprite top-left position in the tank sprite
@@ -165,8 +164,9 @@ class Tank(GameObject):
     def initialize(self):
         super().initialize()
 
-        font = pg.font.SysFont("couriernew", 16)  # TODO: don't re-load every time...
-        self.name_text = font.render(self.name, True, pg.Color('white'))
+        # not in multiplayer...
+        #font = pg.font.SysFont("couriernew", 16)  # TODO: don't re-load every time...
+        #self.name_text = font.render(self.name, True, pg.Color('white'))
 
     def update(self, delta):
         super().update(delta)
@@ -262,7 +262,7 @@ class ObjectContainer:
     def as_list(self):
         return self._objs.values()
     def exists(self, obj_id):
-        return obj_id in self._objs
+        return obj_id in self._objs and obj_id not in self._pending_addition
 
     def get(self, obj_id):
         try:
@@ -278,12 +278,12 @@ class ObjectContainer:
         return obj_id
 
     def delete(self, id):
-        if type(id) is int:
+        if type(id) is int or id.isdigit():  # numeric string is allowed
             self._pending_delete.add(id)
         elif type(id) is list:
             self._pending_delete.update(id)
         else:
-            raise ValueError('Object ID must be integer!')
+            raise ValueError('Object ID must be numeric!')
 
     def count(self):
         # TODO: ignore pending deletes?
