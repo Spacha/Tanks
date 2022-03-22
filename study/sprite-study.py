@@ -16,7 +16,7 @@ def rotate(surface, angle, pivot, offset):
     rect = rotated_image.get_rect(center=pivot+rotated_offset)
     return rotated_image, rect  # Return the rotated image and shifted rect.
 
-class Objects:
+class ObjectContainer:
     def __init__(self):
         self._objs = {}
         self.last_id = 0
@@ -26,6 +26,8 @@ class Objects:
 
     def all(self):
         return self._objs.items()
+    def as_list(self):
+        return self._objs.values()
 
     def get(self, obj_id):
         try:
@@ -41,9 +43,9 @@ class Objects:
         return obj_id
 
     def delete(self, id):
-        if type(id) is list:
+        if type(id) is int:
             self._pending_delete.add(id)
-        elif type(id) is int:
+        elif type(id) is list:
             self._pending_delete.update(id)
         else:
             raise ValueError('Object ID must be integer!')
@@ -69,6 +71,15 @@ class Objects:
                 print("Warning: trying to delete non-existing object.")
         self._pending_delete.clear()
 
+"""
+    Lifecycle:
+        Initialize:
+            Run as soon as the game is initialized. Screen and other resources are available.
+        Update:
+            Update physics etc.
+        Draw:
+            Draw 
+"""
 class Game:
     def __init__(self, scr_size, fps):
         self.scr_size = Vector(scr_size)
@@ -80,25 +91,29 @@ class Game:
 
         # Init pygame
         pg.init()
+        self.clock = pg.time.Clock()
+        # display-related...
         self.scr = pg.display.set_mode(self.scr_size)
         self.main_layer = pg.Surface(self.world_scale * self.scr_size)
         self.screen_rect = self.main_layer.get_rect()
         self.WINDOW_CAPTION = "Sprite study"
         pg.display.set_caption(self.WINDOW_CAPTION)
-        self.clock = pg.time.Clock()
 
         self.running = False
         self.mpos = None
         self.delta = 0.0
 
-        self.objects = Objects()
+        self.objects = ObjectContainer()
 
     def initialize(self):
+        self.objects.apply_pending_changes()
+        self.running = True
         for obj_id, obj in self.objects.all():
+            print("initializing")
             obj.initialize()
 
     def run(self):
-        self.running = True
+        self.initialize()
         while self.running:
             self.check_events()
             self.update()
@@ -137,7 +152,13 @@ class Game:
 
             elif event.type == pg.MOUSEBUTTONDOWN:
                 if event.button == 1:
-                    self.add_obj(Tank(self.mpos_world))
+                    # add a random player to the mouse position
+                    self.add_obj(Tank(f"Player {self.objects.last_id + 2}", self.mpos_world))
+                if event.button == 3:
+                    # delete non-controllable player if mouse hits it (them)
+                    for obj_id, obj in self.objects.all():
+                        if obj.bounding_box().collidepoint(self.mpos_world) and not obj.controllable:
+                            self.delete_obj(obj_id)
 
     def update(self):
         # apply pending deletes and additions
@@ -165,6 +186,9 @@ class Game:
     def add_obj(self, obj):
         obj_id = self.objects.add(obj)
         obj.id = obj_id
+        # if already running, initialize immediately
+        if self.running:
+            obj.initialize()
 
     def delete_obj(self, obj_id):
         self.objects.delete(obj_id)
@@ -198,7 +222,6 @@ class GameObject:
         elif self.position.x > self.prev_position.x:
             self.direction = self.DIR_RIGHT
 
-
     def draw(self, scr):
         pass
 
@@ -210,6 +233,9 @@ class GameObject:
         # update previous...
         self.prev_position = self.position.copy()
         self.prev_direction = self.direction
+
+    def bounding_box(self):
+        pass
 
     # Controls
 
@@ -225,12 +251,12 @@ class TankSprite:  # TODO: use pg.Sprite as a base!
     DIR_LEFT = GameObject.DIR_LEFT
     DIR_RIGHT = GameObject.DIR_RIGHT
 
-    def __init__(self):
+    def __init__(self, text=""):
+        self.text = text
         # BARREL: coordinates defined by the sprite image (in pixels)
         self.barrel_pos             = Vector(25, 24)    # sprite top-left position in the tank sprite
         self.barrel_pivot_pos       = Vector(2, 2)      # pivot position from top-left of the sprite
         self.barrel_pivot_offset    = Vector(11, 0)     # pivot offset from the sprite center (of rotation)
-
         self._initialize()
 
     def _initialize(self):
@@ -243,6 +269,7 @@ class TankSprite:  # TODO: use pg.Sprite as a base!
         # BARREL
         self.barrel_sprite = self.barrel_sprite_original.copy()
         self.barrel_rect = self.barrel_sprite.get_rect()
+
         self.set_direction(self.DIR_RIGHT)
 
     def set_direction(self, direction):
@@ -265,10 +292,9 @@ class TankSprite:  # TODO: use pg.Sprite as a base!
 
 
 class Tank(GameObject):
-    def __init__(self, position):
+    def __init__(self, name, position):
         super().__init__(position)
-        self.controllable = False
-
+        self.name = name
         self.barrel_angle = 0                       # how it is currently positioned
         self.barrel_angle_rate = 0                  # how fast is currently changing
         self.barrel_angle_min = -10
@@ -281,6 +307,9 @@ class Tank(GameObject):
 
     def initialize(self):
         super().initialize()
+
+        font = pg.font.SysFont("couriernew", 16)  # TODO: don't re-load every time...
+        self.name_text = font.render(self.name, True, pg.Color('white'))
 
     def update(self, delta):
         super().update(delta)
@@ -301,12 +330,17 @@ class Tank(GameObject):
             self.sprite.set_direction(self.direction)
 
         scr.blit(self.sprite.surface, self.sprite.rect.move(self.position))
+        text_center = self.position + (self.sprite.rect.w / 2, self.sprite.rect.h + 10)
+        scr.blit(self.name_text, self.name_text.get_rect(center=text_center))  # TODO: should be in top layer (UI)
 
     def tick(self):
         super().tick()
         self.barrel_angle_changed = self.barrel_angle != self.prev_barrel_angle
         # update previous...
         self.prev_barrel_angle = self.barrel_angle
+
+    def bounding_box(self):
+        return self.sprite.surface.get_bounding_rect().move(self.position)
 
     def key_down(self, keys):
         if keys[pg.K_LEFT]:
@@ -315,9 +349,9 @@ class Tank(GameObject):
             self.velocity.x = 50
 
         if keys[pg.K_UP]:
-            self.barrel_angle_rate = 20
+            self.barrel_angle_rate = 30
         if keys[pg.K_DOWN]:
-            self.barrel_angle_rate = -20
+            self.barrel_angle_rate = -30
 
     def key_up(self, keys):
         if not (keys[pg.K_UP] or keys[pg.K_DOWN]):
@@ -328,9 +362,8 @@ class Tank(GameObject):
 
 if __name__ == '__main__':
     game = Game((640, 320), 200)
-    player_tank = Tank((50,50))
+    player_tank = Tank("Me", (50,50))
     player_tank.set_as_player()
     game.add_obj(player_tank)
 
-    game.initialize()
     game.run()

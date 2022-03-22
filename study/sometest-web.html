@@ -13,12 +13,11 @@ function join()
 	let player_name = document.querySelector('input[name="name"]').value;
 
 	socket.addEventListener('open', function (event) {
-		socket.send(encode_msg([null,
-		{
+		socket.send(encode_msg({
 			type: 'join',
 			room: room,
 			player_name: player_name
-		}]));
+		}));
 		console.log("Opened")
 	});
 
