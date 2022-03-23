@@ -64,6 +64,9 @@ class Rect:
         # for collision...
         self.collides = False
 
+        # NOTE: must be re-calculated when size changes!
+        self.containing_radius = (self.x_axis + self.y_axis).length()
+
         self.points = [
             Vector(-self.w / 2, -self.h / 2),   # top-left
             Vector( self.w / 2, -self.h / 2),   # top-right
@@ -96,30 +99,17 @@ class Rect:
     def local_bottom(self):
         return self.h / 2
 
-    def point_collides(self, point):  # Benchmark: ~15 us
-        '''
-        def to_local_coords(point):
-            # TODO: This is probably inefficient as hell!
-            point -= self.position
-            x = point.project(self.x_axis)
-            y = point.project(self.y_axis)
-            dot_x = point.dot(self.x_axis)
-            dot_y = point.dot(self.y_axis)
-            sign_x = -1 if dot_x < 0 else 1
-            sign_y = -1 if dot_y < 0 else 1
-            return Vector(sign_x * x.length(), sign_y * y.length())
+    def circle_contains(self, point):
+        return point.distance_to(self.position) <= self.containing_radius
 
-        local_point = to_local_coords(point.copy())
-        return (self.local_left <= local_point.x <= self.local_right and
-                self.local_top <= local_point.y <= self.local_bottom)
-        '''
-        def to_local_coords_abs(point):
+    def point_collides(self, point):  # Benchmark: ~3 us
+        def to_local_coords(point):
             point -= self.position
             x = point.dot(self.x_axis) / (self.w / 2)
             y = point.dot(self.y_axis) / (self.h / 2)
             return Vector(x, y)
 
-        local_point = to_local_coords_abs(point.copy())
+        local_point = to_local_coords(point.copy())
         return (self.local_left <= local_point.x <= self.local_right and
                 self.local_top <= local_point.y <= self.local_bottom)
 
@@ -134,19 +124,22 @@ class Rect:
     def draw(self, scr):
         color = pg.Color('red') if self.collides else pg.Color('green')
         pg.draw.polygon(scr, color, [point + self.position for point in self.points], 1)
-        pg.draw.circle(scr, pg.Color('white'), self.position, 2)
+        pg.draw.circle(scr, pg.Color('grey'), self.position, self.containing_radius, 1)
+        pg.draw.circle(scr, pg.Color('black'), self.position, 2)
 
-    def bounding_box(self):
+    def containing_box(self):
         #return self.sprite.get_rect(center=self.position)
-        return self.sprite.get_rect(center=self.position)
+        pass
 
 obj = GameObject((0,0))
-poly_rect = Rect(pg.Color('black'), (320,240), 40, 20)
+poly_rect = Rect(pg.Color('black'), (320,240), 60, 30)
 point_pos = Vector(200,240)
 
+N = 500
 points = []
-for i in range(1000):
-    points.append([Vector(randint(10,SCR_WIDTH-10), randint(10,SCR_HEIGHT-10)), False])
+for i in range(N):
+    # 0: position vector, 1: collides, 2: circle contains
+    points.append([Vector(randint(10,SCR_WIDTH-10), randint(10,SCR_HEIGHT-10)), False, False])
 
 delta = 0
 running = True
@@ -188,12 +181,27 @@ while running:
 
     obj.collides = point_collision(obj.bounding_box(), point_pos)
 
-    #poly_rect.collides = False  # reset collision state
-    poly_rect.collides = poly_rect.point_collides(point_pos)
+    poly_rect.collides = False  # reset collision state
+    #poly_rect.collides = poly_rect.point_collides(point_pos)
+    #start_t = time.time()
     for i, point in enumerate(points):
+        # reset collision state
+        points[i][1] = False
+        points[i][2] = False
+
+        # does the circle contain it?
+        if not poly_rect.circle_contains(point[0]):
+            continue
+
+        point[2] = True
+        # does the rect contain it?
         points[i][1] = poly_rect.point_collides(point[0])
         if points[i][1]:
             poly_rect.collides = True
+    #total_t = time.time() - start_t
+
+    #print(f"=> Avg: {total_t / N * 1E6} us per collision.")
+    #print(f"=> Total: {total_t * 1E6} us per {N} collisions.")
 
     # 3. Draw
     pg.display.set_caption(f"Collision study - FPS: {round(clock.get_fps(), 2)}")
@@ -201,8 +209,14 @@ while running:
 
     pg.draw.circle(scr, pg.Color('white'), point_pos, 2)
     for point in points:
-        # red if collides, otherwise yellow
-        pg.draw.circle(scr, pg.Color('red') if point[1] else pg.Color('yellow'), point[0], 2)
+        if point[1]:  # collision
+            color = pg.Color('red')
+        elif point[2]:  # circle contains
+            color = pg.Color('yellow')
+        else:
+            color = pg.Color('white')
+
+        pg.draw.circle(scr, color, point[0], 2)
 
     obj.draw(scr)
     poly_rect.draw(scr)
