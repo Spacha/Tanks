@@ -97,6 +97,7 @@ class Rect:
         return self.h / 2
 
     def point_collides(self, point):  # Benchmark: ~15 us
+        '''
         def to_local_coords(point):
             # TODO: This is probably inefficient as hell!
             point -= self.position
@@ -109,6 +110,16 @@ class Rect:
             return Vector(sign_x * x.length(), sign_y * y.length())
 
         local_point = to_local_coords(point.copy())
+        return (self.local_left <= local_point.x <= self.local_right and
+                self.local_top <= local_point.y <= self.local_bottom)
+        '''
+        def to_local_coords_abs(point):
+            point -= self.position
+            x = point.dot(self.x_axis) / (self.w / 2)
+            y = point.dot(self.y_axis) / (self.h / 2)
+            return Vector(x, y)
+
+        local_point = to_local_coords_abs(point.copy())
         return (self.local_left <= local_point.x <= self.local_right and
                 self.local_top <= local_point.y <= self.local_bottom)
 
@@ -134,7 +145,7 @@ poly_rect = Rect(pg.Color('black'), (320,240), 40, 20)
 point_pos = Vector(200,240)
 
 points = []
-for i in range(50):
+for i in range(1000):
     points.append([Vector(randint(10,SCR_WIDTH-10), randint(10,SCR_HEIGHT-10)), False])
 
 delta = 0
@@ -177,7 +188,8 @@ while running:
 
     obj.collides = point_collision(obj.bounding_box(), point_pos)
 
-    poly_rect.collides = False  # reset collision state
+    #poly_rect.collides = False  # reset collision state
+    poly_rect.collides = poly_rect.point_collides(point_pos)
     for i, point in enumerate(points):
         points[i][1] = poly_rect.point_collides(point[0])
         if points[i][1]:
