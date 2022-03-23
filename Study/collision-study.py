@@ -1,7 +1,8 @@
-import os
+import os, time
 import pygame as pg
 from pygame.math import Vector2 as Vector
 from math import sqrt, sin, cos, tan
+from random import randint
 
 def rotate(surface, angle, pivot, offset):
     """Rotate the surface around the pivot point.
@@ -17,10 +18,11 @@ def rotate(surface, angle, pivot, offset):
     rect = rotated_image.get_rect(center=pivot+rotated_offset)
     return rotated_image, rect  # Return the rotated image and shifted rect.
 
+SCR_WIDTH, SCR_HEIGHT = (640,480)
 FPS = 60
 
 pg.init()
-scr = pg.display.set_mode((640, 480))
+scr = pg.display.set_mode((SCR_WIDTH, SCR_HEIGHT))
 clock = pg.time.Clock()
 
 class GameObject:
@@ -59,7 +61,7 @@ class Rect:
         self.y_axis = Vector(0, self.h / 2)   # local y-axis, defines 'height'
         self.rotation = 0.0
 
-        # collision
+        # for collision...
         self.collides = False
 
         self.points = [
@@ -69,33 +71,46 @@ class Rect:
             Vector(-self.w / 2,  self.h / 2),   # bottom-right
         ]
 
-    def point_collision(self, point):
-        '''return (rect.x <= point.x <= rect.right and
-                rect.y <= point.y <= rect.bottom)'''
+    @property
+    def left(self):
+        return self.position - self.w / 2
+    @property
+    def right(self):
+        return self.position + self.w / 2
+    @property
+    def top(self):
+        return self.position - self.h / 2
+    @property
+    def bottom(self):
+        return self.position + self.h / 2
+    @property
+    def local_left(self):
+        return - self.w / 2
+    @property
+    def local_right(self):
+        return self.w / 2
+    @property
+    def local_top(self):
+        return - self.h / 2
+    @property
+    def local_bottom(self):
+        return self.h / 2
+
+    def point_collides(self, point):  # Benchmark: ~15 us
         def to_local_coords(point):
+            # TODO: This is probably inefficient as hell!
             point -= self.position
             x = point.project(self.x_axis)
             y = point.project(self.y_axis)
             dot_x = point.dot(self.x_axis)
             dot_y = point.dot(self.y_axis)
-            #print(x, dot_x, "\t", y, dot_y)
-            #sign_x = -1 if x.x < 0 else 1
-            #sign_y = -1 if y.x < 0 else 1
-            #print(Vector(sign_x * x.length(), sign_y * y.length(), ))
             sign_x = -1 if dot_x < 0 else 1
             sign_y = -1 if dot_y < 0 else 1
-            print(sign_x * x.length(), "\t", sign_y * y.length())
-            #print(sign_x * x.length(), "\t", sign_x * x.length())
-            #print(point.project(self.y_axis).angle_to(Vector(1,0)))
-            '''
-            return Vector(
-                point.project(self.x_axis).length(),
-                point.project(self.y_axis).length())
-            '''
+            return Vector(sign_x * x.length(), sign_y * y.length())
 
         local_point = to_local_coords(point.copy())
-        #print(local_point)
-
+        return (self.local_left <= local_point.x <= self.local_right and
+                self.local_top <= local_point.y <= self.local_bottom)
 
     def rotate(self, angle):
         self.rotation += angle
@@ -114,9 +129,13 @@ class Rect:
         #return self.sprite.get_rect(center=self.position)
         return self.sprite.get_rect(center=self.position)
 
-obj = GameObject((320,240))
+obj = GameObject((0,0))
 poly_rect = Rect(pg.Color('black'), (320,240), 40, 20)
 point_pos = Vector(200,240)
+
+points = []
+for i in range(50):
+    points.append([Vector(randint(10,SCR_WIDTH-10), randint(10,SCR_HEIGHT-10)), False])
 
 delta = 0
 running = True
@@ -157,15 +176,23 @@ while running:
                 rect.y <= point.y <= rect.bottom)
 
     obj.collides = point_collision(obj.bounding_box(), point_pos)
-    poly_rect.point_collision(point_pos)
+
+    poly_rect.collides = False  # reset collision state
+    for i, point in enumerate(points):
+        points[i][1] = poly_rect.point_collides(point[0])
+        if points[i][1]:
+            poly_rect.collides = True
 
     # 3. Draw
     pg.display.set_caption(f"Collision study - FPS: {round(clock.get_fps(), 2)}")
     scr.fill((150,150,150))
 
     pg.draw.circle(scr, pg.Color('white'), point_pos, 2)
-    obj.draw(scr)
+    for point in points:
+        # red if collides, otherwise yellow
+        pg.draw.circle(scr, pg.Color('red') if point[1] else pg.Color('yellow'), point[0], 2)
 
+    obj.draw(scr)
     poly_rect.draw(scr)
 
     pg.display.update()
