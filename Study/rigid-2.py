@@ -77,14 +77,17 @@ class Rect:
         local_point = to_local_coords(point.copy())
         return (self.local_left <= local_point.x <= self.local_right and
                 self.local_top <= local_point.y <= self.local_bottom)
+        does = (self.local_left <= local_point.x <= self.local_right and
+            self.local_top <= local_point.y <= self.local_bottom)
+        print(f"{self.local_left} <= ({local_point.x}) <= {self.local_right}, {self.local_top} <= ({local_point.y}) <= {self.local_bottom} = {does}")
 
     def rotate(self, angle):
-        self.rotation += angle
+        self.rotation = angle
         for point in self.points:
-            point.rotate_ip(angle)
+            point.rotate_ip(-angle)
 
-        self.x_axis.rotate_ip(angle)
-        self.y_axis.rotate_ip(angle)
+        self.x_axis.rotate_ip(-angle)
+        self.y_axis.rotate_ip(-angle)
 
     def draw(self, scr):
         color = pg.Color('red') if self.collides else pg.Color('green')
@@ -121,18 +124,24 @@ class RigidBody:
         self.torque = 0.0
         self.shape = None
 
+    def get_rect(self):
+        r = Rect(pg.Color('white'), self.position, self.shape.width, self.shape.height)
+        r.rotate(self.angle / PI * 180)
+        return r
+
     def draw(self, scr):
-        rect = Rect(pg.Color('white'), self.position, self.shape.width, self.shape.height)
-        rect.rotate(self.angle / PI * 180)
+        rect = self.get_rect()
+        #rect.rotate(self.angle / PI * 180)
         rect.draw(scr)
 
-        r = Vector(self.shape.width / 2, self.shape.height / 2)
-        pg.draw.line(scr, pg.Color('red'), r, r + self.force)
+        #r = Vector(self.shape.width / 2, self.shape.height / 2)
+        #pg.draw.line(scr, pg.Color('red'), r, r + self.force)
 
 def initialize_rigid_bodies():
     for i in range(NUM_RIGID_BODIES):
         rigid_body = RigidBody(
-            pos         = Vector( randint(50,SCR_WIDTH-50), randint(50,SCR_HEIGHT/2) ),
+            #pos         = Vector( randint(50,SCR_WIDTH-50), randint(50,SCR_HEIGHT/2) ),
+            pos         = Vector( 100, 100 ),
             linear_vel  = Vector(0,0),
             angle       = randint(0,360) / 360 * PI * 2,
             angular_vel = 0.0)
@@ -145,12 +154,13 @@ def initialize_rigid_bodies():
 
 # Applies a force at a point in the body, inducing some torque.
 def compute_force_and_torque(rigid_body):
-    f = Vector(10, 10)
-    rigid_body.force = f
+    pass
+    #f = Vector(10, 10)
+    #rigid_body.force = f
 
     # r is the 'arm vector' that goes from the center of mass to the point of force application
-    r = Vector(rigid_body.shape.width / 2, rigid_body.shape.height / 2)
-    rigid_body.torque = r.x * f.y - r.y * f.x
+    #r = Vector(rigid_body.shape.width / 2, rigid_body.shape.height / 2)
+    #rigid_body.torque = r.x * f.y - r.y * f.x
 
 def print_rigid_bodies():
     for i, rigid_body in enumerate(rigid_bodies):
@@ -158,13 +168,9 @@ def print_rigid_bodies():
 
 # Pygame ----------------------------------------------#
 def draw_rigid_bodies(scr):
-    scr.fill((150,150,150))
     for i, rigid_body in enumerate(rigid_bodies):
         rigid_body.draw(scr)
         #pg.draw.rect(scr, pg.Color('white'), rigid_body.get_rect(), 1)
-
-    pg.display.update()
-
 # Pygame ----------------------------------------------#
 
 # https://toptal.com/game/video-game-physics-part-i-an-introduction-to-rigid-body-dynamics
@@ -175,42 +181,142 @@ def run_rigid_body_simulation():
 
     # Pygame ----------------------------------------------#
     pg.init()
+    pg.font.init()
     scr = pg.display.set_mode((SCR_WIDTH, SCR_HEIGHT))
+    font = pg.font.Font(None, 24)
+    smallfont = pg.font.Font(None, 18)
     clock = pg.time.Clock()
     running = True
+    paused = True
+    paused_text = font.render('Paused', True, pg.Color('white'))
     # Pygame ----------------------------------------------#
     
     initialize_rigid_bodies()
     print_rigid_bodies()
+
+    N = 250
+    points = []
+    for i in range(N):
+        # 0: position vector, 1: collides, 2: circle contains
+        points.append([Vector(randint(10,SCR_WIDTH-10), randint(10,SCR_HEIGHT-10)), False, False])
     
-    while current_time < total_simulation_time and running:
-        # Pygame ----------------------------------------------#
+    mdown_pos = None
+    mdown = None
+    #while current_time < total_simulation_time and running:
+    while running:
+        mreleased = False
+
         for event in pg.event.get():
             if event.type == pg.QUIT:
                 running = False
-            if event.type == pg.KEYDOWN:
+            elif event.type == pg.KEYUP:
                 if event.key == pg.K_q:
                     running = False
-        # Pygame ----------------------------------------------#
+                if event.key == pg.K_SPACE:
+                    paused = not paused
+            elif event.type == pg.MOUSEBUTTONDOWN:
+                if event.button == 1:
+                    mdown_pos = Vector(event.pos)
+                    mdown = True
+            elif event.type == pg.MOUSEBUTTONUP:
+                if event.button == 1:
+                    mup_pos = Vector(event.pos)
+                    mdown = False
+                    mreleased = True
+                elif event.button == 3:
 
-        for rigid_body in rigid_bodies:
-            compute_force_and_torque(rigid_body)
-            linear_acceleration = Vector(rigid_body.force.x / rigid_body.shape.mass, rigid_body.force.y / rigid_body.shape.mass)
-            rigid_body.linear_velocity.x += linear_acceleration.x * dt
-            rigid_body.linear_velocity.y += linear_acceleration.y * dt
+                    rigid_body = RigidBody(
+                        pos         = Vector(event.pos),
+                        linear_vel  = Vector(0,0),
+                        angle       = randint(0,360) / 360 * PI * 2,
+                        angular_vel = 0.0)
 
-            rigid_body.position.x += rigid_body.linear_velocity.x * dt
-            rigid_body.position.y += rigid_body.linear_velocity.y * dt
+                    rigid_body.shape = BoxShape(
+                        w = 1 + 20*randint(1,4),
+                        h = 1 + 20*randint(1,4),
+                        m = 10)
+                    rigid_bodies.append(rigid_body)
 
-            angular_acceleration = rigid_body.torque / rigid_body.shape.moment_of_inertia
-            rigid_body.angular_velocity += angular_acceleration * dt
-            rigid_body.angle += rigid_body.angular_velocity * dt
-        
-        print_rigid_bodies()
-        draw_rigid_bodies(scr)  # Pygame
+            elif event.type == pg.MOUSEMOTION:
+                #print(event.pos)
+                mpos = Vector(event.pos)
 
-        current_time += clock.tick(1 / dt) / 1000  # Pygame
-        #current_time += dt
+        scr.fill((150,150,150))
+
+        if not paused:
+            for rigid_body in rigid_bodies:
+                compute_force_and_torque(rigid_body)
+                linear_acceleration = Vector(rigid_body.force.x / rigid_body.shape.mass, rigid_body.force.y / rigid_body.shape.mass)
+                rigid_body.linear_velocity.x += linear_acceleration.x * dt
+                rigid_body.linear_velocity.y += linear_acceleration.y * dt
+
+                rigid_body.position.x += rigid_body.linear_velocity.x * dt
+                rigid_body.position.y += rigid_body.linear_velocity.y * dt
+
+                angular_acceleration = rigid_body.torque / rigid_body.shape.moment_of_inertia
+                rigid_body.angular_velocity += angular_acceleration * dt
+                rigid_body.angle += rigid_body.angular_velocity * dt
+
+                # zero out...
+                rigid_body.force = Vector(0,0)
+                rigid_body.torque = 0.0
+
+                #print_rigid_bodies()
+        else:
+            pass
+
+        if mdown:
+            pg.draw.line(scr, pg.Color('blue'), mdown_pos, mpos)
+            t = smallfont.render(f"{round(((mpos - mdown_pos) * 50).length(), 1)} N", True, pg.Color('white'))
+            scr.blit(t, t.get_rect(bottomright=(mpos)))
+        elif mreleased:
+            for rigid_body in rigid_bodies:
+                if rigid_body.get_rect().point_collides(Vector(mdown_pos)):
+                    f = (mup_pos - mdown_pos) * 50
+                    print(f"Apply force of {round(f.length())} N to object: {rigid_body} ({f}).")
+                    rigid_body.force = f
+                    #r = rigid_body.position.project(f + )
+                    rigid_body.torque = f.cross(mdown_pos - rigid_body.position)
+                    print(rigid_body.torque)
+                    #print(f"Moment arm: {r}.")
+                    break
+
+        for i, point in enumerate(points):
+            # reset collision state
+            points[i][1] = False
+            points[i][2] = False
+
+            # does the circle contain it?
+            if not rigid_bodies[0].get_rect().circle_contains(point[0]):
+                continue
+
+            point[2] = True
+            # does the rect contain it?
+            points[i][1] = rigid_bodies[0].get_rect().point_collides(point[0])
+            if points[i][1]:
+                rigid_bodies[0].collides = True
+
+        for point in points:
+            if point[1]:  # collision
+                color = pg.Color('red')
+            elif point[2]:  # circle contains
+                color = pg.Color('yellow')
+            else:
+                color = pg.Color('white')
+
+            pg.draw.circle(scr, color, point[0], 2)
+            
+        draw_rigid_bodies(scr)
+
+        if paused:
+            scr.blit(paused_text, paused_text.get_rect(center=(SCR_WIDTH / 2, 20)))
+
+        pg.display.update()
+
+        if paused:
+            clock.tick(1 / dt)
+        else:
+            current_time += clock.tick(1 / dt) / 1000
 
 if __name__ == '__main__':
     run_rigid_body_simulation()
