@@ -194,11 +194,17 @@ def run_rigid_body_simulation():
     initialize_rigid_bodies()
     print_rigid_bodies()
 
+    
+    points = []
+    for x in range(SCR_WIDTH):
+        points.append([Vector(x, 300 + 60 * sin(10*x / SCR_WIDTH)), False, False])
+    '''
     N = 250
     points = []
     for i in range(N):
         # 0: position vector, 1: collides, 2: circle contains
         points.append([Vector(randint(10,SCR_WIDTH-10), randint(10,SCR_HEIGHT-10)), False, False])
+    '''
     
     mdown_pos = None
     mdown = None
@@ -243,6 +249,11 @@ def run_rigid_body_simulation():
 
         scr.fill((150,150,150))
 
+        for i, point in enumerate(points):
+            # reset collision state
+            points[i][1] = False
+            points[i][2] = False
+
         if not paused:
             for rigid_body in rigid_bodies:
                 compute_force_and_torque(rigid_body)
@@ -277,24 +288,27 @@ def run_rigid_body_simulation():
                     rigid_body.force = f
                     #r = rigid_body.position.project(f + )
                     rigid_body.torque = f.cross(mdown_pos - rigid_body.position)
-                    print(rigid_body.torque)
+                    #print(rigid_body.torque)
                     #print(f"Moment arm: {r}.")
                     break
 
-        for i, point in enumerate(points):
-            # reset collision state
-            points[i][1] = False
-            points[i][2] = False
 
-            # does the circle contain it?
-            if not rigid_bodies[0].get_rect().circle_contains(point[0]):
-                continue
 
-            point[2] = True
-            # does the rect contain it?
-            points[i][1] = rigid_bodies[0].get_rect().point_collides(point[0])
-            if points[i][1]:
-                rigid_bodies[0].collides = True
+        for rigid_body in rigid_bodies:
+            #rigid_body.force += rigid_body.shape.mass * Vector(0, 9.81)
+
+            for i, point in enumerate(points):
+
+                # does the circle contain it?
+                if not rigid_body.get_rect().circle_contains(point[0]):
+                    continue
+
+                point[2] = True
+                # does the rect contain it?
+                points[i][1] = rigid_body.get_rect().point_collides(point[0])
+                if points[i][1]:
+                    # point-object collision
+                    rigid_body.collides = True
 
         for point in points:
             if point[1]:  # collision
@@ -312,11 +326,12 @@ def run_rigid_body_simulation():
             scr.blit(paused_text, paused_text.get_rect(center=(SCR_WIDTH / 2, 20)))
 
         pg.display.update()
+        pg.display.set_caption(f"Collision study - FPS: {round(clock.get_fps(), 2)}")
 
         if paused:
-            clock.tick(1 / dt)
+            clock.tick(FPS)
         else:
-            current_time += clock.tick(1 / dt) / 1000
+            current_time += clock.tick(FPS) / 1000
 
 if __name__ == '__main__':
     run_rigid_body_simulation()
