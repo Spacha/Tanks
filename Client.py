@@ -19,13 +19,20 @@ def encode_msg(msg):
 def decode_msg(text):
     return json.loads(text)
 
-MAP = {
+MAPS = [{
     "world_size": (1200, 900),
     "terrain_file": "Study/img/map-cave.png",
     "max_players": 2,
     "start_positions": [(90, 540), (1110, 540), (550, 230)],
     "start_directions": [Vector(1, 0), -Vector(1, 0), Vector(1, 0)]
-}
+}, {
+    "world_size": (1200, 900),
+    "terrain_file": "Study/img/map-obstacle-course.png",
+    "max_players": 1,
+    "start_positions": [(90, 540)],
+    "start_directions": [Vector(1, 0)]
+}]
+MAP = MAPS[0]
 
 #TICK_RATE = 1  # must match with the server
 WORLD_WIDTH, WORLD_HEIGHT = (1200, 900)
@@ -209,7 +216,7 @@ class Game:
     def initialize(self):
         self.terrain_surface = pg.Surface((WORLD_WIDTH, WORLD_HEIGHT), flags=pg.SRCALPHA)
 
-        self.map_sprite = pg.image.load("Study/img/map-cave.png")
+        self.map_sprite = pg.image.load(MAP["terrain_file"])
         map_rect = self.map_sprite.get_rect(bottomleft=(0, WORLD_HEIGHT))
         self.terrain_surface.blit(self.map_sprite, map_rect)
 
@@ -565,9 +572,8 @@ class Tank(GameObject):
     def update(self, delta):
         super().update(delta)
 
-        if self.lost_state_changed:
+        if self.owned_by_player and self.lost_state_changed:
             self.handle_loss()
-
 
         self.barrel_angle_change = delta * self.barrel_angle_rate
         self.barrel_angle += self.barrel_angle_change
@@ -595,11 +601,13 @@ class Tank(GameObject):
         hud.blit(self.name_text, name_text_rect)
 
         # Draw health bar
+        health_percentage = self.health_points / MAX_HP
+        hp_color = ((1 - health_percentage) * 255, health_percentage * 255, 0)
         hp_bar_frame_rect = pg.Rect(self.position + (-50, 60), (100, 20))
         hp_bar_rect = hp_bar_frame_rect.inflate(-4, -4)
-        hp_bar_rect.w = hp_bar_rect.w * self.health_points / MAX_HP
+        hp_bar_rect.w = hp_bar_rect.w * health_percentage
 
-        pg.draw.rect(hud, pg.Color('green'), hp_bar_rect)
+        pg.draw.rect(hud, hp_color, hp_bar_rect)
         pg.draw.rect(hud, pg.Color('white'), hp_bar_frame_rect, 1)
 
         # draw "no action points" notification
@@ -636,6 +644,18 @@ class Tank(GameObject):
                 pg.draw.rect(hud, (175,28,0), t.get_rect(center=(WIDTH / 2, 63 + 44)).inflate(16,8))
                 hud.blit(t, t.get_rect(center=(WIDTH / 2, 63 + 44)))
 
+            if self.has_lost:
+                hud_font = pg.font.SysFont("segoeui", 18)   # !!!!
+                hud_font_big = pg.font.SysFont("segoeui", 28)   # !!!!
+                t1 = hud_font_big.render(f"You lost!", True, pg.Color('white'))
+                t2 = hud_font.render(f"Press [q] to quit.", True, pg.Color('black'))
+
+                pg.draw.rect(hud, (175,28,0), pg.Rect( 0, 40, WIDTH, 90 ))
+                pg.draw.line(hud, (120,18,0), (0, 40), (WIDTH, 40))
+                pg.draw.line(hud, (120,18,0), (0, 40 + 90), (WIDTH, 40 + 90))
+                hud.blit(t1, t1.get_rect(center=(WIDTH / 2, 63)))
+                hud.blit(t2, t2.get_rect(center=(WIDTH / 2, 63 + 44)))
+
         #update_rects += [self.sprite.rect.move(self.prev_position), sprite_rect, name_text_rect]
 
     def tick(self):
@@ -652,7 +672,7 @@ class Tank(GameObject):
     #----------------------------------
 
     def handle_loss(self):
-        print("YOU LOST")
+        pass
 
     def update_state(self, state):
         super().update_state(state)

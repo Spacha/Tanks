@@ -29,13 +29,20 @@ def encode_msg(msg):
 def decode_msg(text):
     return json.loads(text)
 
-MAP = {
+MAPS = [{
     "world_size": (1200, 900),
     "terrain_file": "Study/img/map-cave.png",
     "max_players": 2,
     "start_positions": [(90, 540), (1110, 540), (550, 230)],
     "start_directions": [Vector(1, 0), -Vector(1, 0), Vector(1, 0)]
-}
+}, {
+    "world_size": (1200, 900),
+    "terrain_file": "Study/img/map-obstacle-course.png",
+    "max_players": 1,
+    "start_positions": [(90, 540)],
+    "start_directions": [Vector(1, 0)]
+}]
+MAP = MAPS[0]
 
 # Physics: 120 FPS, updates: 30 FPS
 TICK_RATE = 120
@@ -103,7 +110,7 @@ def generate_geometry(surface, space):
 
 def pre_solve_static(arb, space, data):
     s = arb.shapes[0]
-    if s.body is Tank:
+    if type(s.body) is Tank:
         s.body.lose()
     space.remove(s.body, s)
     return False
@@ -120,6 +127,8 @@ class GameObject(pm.Body):
         self.direction = self.DIR_RIGHT
         self.prev_direction = self.direction
         self.direction_changed = True
+
+        self.paska = 'penismaailma'
 
         self.game = None  # this is only used in shooting (should avoid using)
 
@@ -217,14 +226,15 @@ class Tank(GameObject):
         elif self.barrel_angle > self.barrel_angle_max:
             self.barrel_angle = self.barrel_angle_max
 
-        self.on_ground = False
-        for s in space.shapes:
-            if hasattr(s, "is_ground") and s.is_ground:
-                if self.shape.shapes_collide(s).points:
-                    self.on_ground = True
-                    break
-
         self.fallen_over = PI/2 <= self.angle <= 3/2*PI
+
+        self.on_ground = False
+        if not self.fallen_over:
+            for s in space.shapes:
+                if hasattr(s, "is_ground") and s.is_ground:
+                    if self.shape.shapes_collide(s).points:
+                        self.on_ground = True
+                        break
 
         if self.action_points <= 0:
             self.action_points = 0.0
@@ -234,7 +244,14 @@ class Tank(GameObject):
             self.direction = self.DIR_LEFT if self.driving_direction < 0 else self.DIR_RIGHT
             
             if self.on_ground:
-                self.apply_impulse_at_local_point(self.driving_direction * self.rotation_vector * 50000, (0, 14))
+                #self.shape.friction = 0.1
+                #self.apply_impulse_at_local_point(self.driving_direction * self.rotation_vector * 1000000 * delta, (0, 14))
+                self.shape.surface_velocity = -self.direction.x * self.rotation_vector * 5000 * delta
+        
+        if self.driving_direction == 0:
+            #self.shape.friction = 10.0
+            self.shape.surface_velocity = 0,0
+
 
     def draw(self, scr, hud):
         super().draw(scr, hud)
@@ -249,6 +266,9 @@ class Tank(GameObject):
     def key_down(self, pressed):
         
         # MULTIPLAYER - SERVER.
+
+        if self.has_lost:
+            return
 
         if pg.K_LEFT in pressed:
             #self.velocity.x = -50
@@ -265,6 +285,9 @@ class Tank(GameObject):
     def key_up(self, released):
         
         # MULTIPLAYER - SERVER.
+
+        if self.has_lost:
+            return
 
         if pg.K_TAB in released:
             if not self.turn_ended:
@@ -289,6 +312,7 @@ class Tank(GameObject):
         self.action_points = 0.0
         self.health_points = 0.0
         self.has_lost = True
+        self.end_turn()
 
     def take_damage(self, damage):
         # TODO: account for armor etc.
@@ -608,7 +632,7 @@ class Game:
                         player.key_up([key])
 
         if self.clients.count() > 0:
-            if self.objects.get(self.current_player.obj_id).turn_ended:
+            if self.current_player is None or (self.objects.exists(self.current_player.obj_id) and self.objects.get(self.current_player.obj_id).turn_ended):
                 self.next_turn()
 
     def next_turn(self, client_id=None):
@@ -616,18 +640,28 @@ class Game:
             # find next client in the list (wraps back to the previous current if alone)
             client_id = self.current_player.id + 1
             client = None
-            while client is None:
+            c = 0
+            while client is None and c < 10:
                 try:
                     client = self.clients.get(client_id)
+                    if client is not None:
+                        obj = self.objects.get(client.obj_id)
+                        if obj.has_lost:  # cannot give turn to player who has lost
+                            raise
                 except:
                     client = None
                     client_id = (client_id + 1)
                     if client_id > self.clients.last_id:
                         client_id = 0
+                c += 1
+                
         else:
             # get certain client
             client = self.clients.get(client_id)
         
+        if client is None:  # no active players...
+            return
+
         self.current_player = client
         self.objects.get(self.current_player.obj_id).start_turn()
 
@@ -637,7 +671,8 @@ class Game:
 
         self.space.step(1.0 / TICK_RATE)
 
-        self.objects.get(self.current_player.obj_id).update_action_points(self.delta)
+        if self.objects.exists(self.current_player.obj_id):
+            self.objects.get(self.current_player.obj_id).update_action_points(self.delta)
 
     def send_update(self, client=None):
         #self.tx_queue.sync_q.put({'type': 'test', 'tick': self.tick})
@@ -719,7 +754,7 @@ class Game:
         self.running = False
         self.rx_queue.close()
         #await self.rx_queue.wait_closed()
-        pg.quit()
+        #pg.quit()
 
     def send_absolute_update(self, client=None):
         #self.tx_queue.sync_q.put({'type': 'test', 'tick': self.tick})
