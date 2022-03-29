@@ -19,10 +19,21 @@ def encode_msg(msg):
 def decode_msg(text):
     return json.loads(text)
 
+MAP = {
+    "world_size": (1200, 900),
+    "terrain_file": "Study/img/map-cave.png",
+    "max_players": 2,
+    "start_positions": [(90, 540), (1110, 540)],
+    "start_directions": [+1, -1]
+}
+
 #TICK_RATE = 1  # must match with the server
 WORLD_WIDTH, WORLD_HEIGHT = (1200, 900)
 WIDTH, HEIGHT = (1200, 900)
 FPS = 60
+
+if (WORLD_WIDTH, WORLD_HEIGHT) != MAP["world_size"]:
+    print("Warning: Terrain size doesn't match with world size!")
 
 PLAYER_SINK = 6
 

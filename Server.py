@@ -28,8 +28,19 @@ def encode_msg(msg):
 def decode_msg(text):
     return json.loads(text)
 
+MAP = {
+    "world_size": (1200, 900),
+    "terrain_file": "Study/img/map-cave.png",
+    "max_players": 2,
+    "start_positions": [(90, 540), (1110, 540)],
+    "start_directions": [Vector(1, 0), -Vector(1, 0)]
+}
+
 TICK_RATE = 60 # TODO: Update physics 60 TPS but send update 30 TPS.
 WORLD_WIDTH, WORLD_HEIGHT = (1200, 900)
+
+if (WORLD_WIDTH, WORLD_HEIGHT) != MAP["world_size"]:
+    print("Warning: Terrain size doesn't match with world size!")
 
 PLAYER_SINK = 6
 
@@ -373,7 +384,7 @@ class Game:
 
         terrain_surface = pg.Surface((WORLD_WIDTH, WORLD_HEIGHT), flags=pg.SRCALPHA)
 
-        map_sprite = pg.image.load("Study/img/map-cave.png")
+        map_sprite = pg.image.load(MAP["terrain_file"])
         map_rect = map_sprite.get_rect(bottomleft=(0, WORLD_HEIGHT))
         terrain_surface.blit(map_sprite, map_rect)
         generate_geometry(terrain_surface, self.space)
@@ -462,6 +473,8 @@ class Game:
     #----------------------------------
 
     def join(self, socket, name):
+        # TODO: Handle disconnected and rejoined (missed client id)
+        # TODO: Respond negatively if cannot join (full lobby or so)
         def next_tank_model(client_id):
             return TANK_MODELS[client_id % len(TANK_MODELS)]
         # add a client and tank (object) for the new player
@@ -469,7 +482,8 @@ class Game:
         client_id = self.clients.add(client)
         client.id = client_id
         # create tank for the client
-        obj = Tank(name, (90, 540), next_tank_model(client_id))
+        obj = Tank(name, MAP["start_positions"][client_id], next_tank_model(client_id))
+        obj.direction = MAP["start_directions"][client_id]
         obj.owner_id = client_id    # the object belongs to the client
         self.add_obj(obj)
         self.space.add(obj, obj.shape)
