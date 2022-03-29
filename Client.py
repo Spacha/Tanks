@@ -36,6 +36,7 @@ if (WORLD_WIDTH, WORLD_HEIGHT) != MAP["world_size"]:
     print("Warning: Terrain size doesn't match with world size!")
 
 PLAYER_SINK = 6
+MAX_HP = 100
 
 MAX_AP              = 100
 MOVEMENT_AP_COST    = 20
@@ -406,9 +407,6 @@ class Game:
                             pg.draw.circle( update_surf, (0,0,0,0), (urad,urad), urad)
                             self.terrain_surface.blit( update_surf, update_surf.get_rect(center=(upos)), special_flags=pg.BLEND_RGBA_MULT )
 
-
-
-
     def send_event(self, event):
         self.send_message({
             'type': 'game_event',
@@ -534,6 +532,9 @@ class Tank(GameObject):
         self.prev_barrel_angle = self.barrel_angle      # what was the previous value
         self.barrel_angle_changed = True                # was the value just changed
 
+        self.prev_lost_state = False
+        self.lost_state_changed = False
+
         self.position = Vec2d(*position)
         self.center_of_gravity = Vec2d(0, size[1] / 2)  # very low center of mass
 
@@ -551,6 +552,8 @@ class Tank(GameObject):
         self.owner_id = None                            # MULTIPLAYER: which client this object belongs to
         self.action_points = 0.0
         self.has_turn = False
+        self.health_points = MAX_HP
+        self.has_lost = False
 
     def initialize(self):
         super().initialize()
@@ -561,6 +564,10 @@ class Tank(GameObject):
 
     def update(self, delta):
         super().update(delta)
+
+        if self.lost_state_changed:
+            self.handle_loss()
+
 
         self.barrel_angle_change = delta * self.barrel_angle_rate
         self.barrel_angle += self.barrel_angle_change
@@ -587,10 +594,18 @@ class Tank(GameObject):
         #scr.blit(self.sprite.surface, sprite_rect)
         hud.blit(self.name_text, name_text_rect)
 
+        # Draw health bar
+        hp_bar_frame_rect = pg.Rect(self.position + (-50, 60), (100, 20))
+        hp_bar_rect = hp_bar_frame_rect.inflate(-4, -4)
+        hp_bar_rect.w = hp_bar_rect.w * self.health_points / MAX_HP
+
+        pg.draw.rect(hud, pg.Color('green'), hp_bar_rect)
+        pg.draw.rect(hud, pg.Color('white'), hp_bar_frame_rect, 1)
+
         # draw "no action points" notification
         if self.owned_by_player:
 
-            # Draw 'action bar indicator'
+            # Draw 'action points bar'
 
             color = pg.Color('green')
             if self.action_points <= SHOOT_AP_COST:
@@ -605,8 +620,6 @@ class Tank(GameObject):
 
             if self.has_turn:
                 if self.action_points <= 0:
-                    #t1 = bigfont.render(f"End of action points!", True, pg.Color('white'))
-                    #t2 = font.render(f"Press [TAB] to end turn.", True, pg.Color('black'))
                     hud_font = pg.font.SysFont("segoeui", 18)   # !!!!
                     hud_font_big = pg.font.SysFont("segoeui", 28)   # !!!!
                     t1 = hud_font_big.render(f"End of action points!", True, pg.Color('white'))
@@ -631,13 +644,21 @@ class Tank(GameObject):
         # update previous...
         self.prev_barrel_angle = self.barrel_angle
 
+        self.lost_state_changed = self.has_lost != self.prev_lost_state
+        self.prev_lost_state = self.has_lost
+
     #----------------------------------
     #   MULTIPLAYER-SPECIFIC
     #----------------------------------
 
+    def handle_loss(self):
+        print("YOU LOST")
+
     def update_state(self, state):
         super().update_state(state)
         self.has_turn       = bool(state['has_turn'])
+        self.has_lost       = bool(state['has_lost'])
+        self.health_points  = float(state['health_points'])
         self.action_points  = float(state['action_points'])
         self.barrel_angle   = float(state['barrel_angle'])
 
@@ -850,7 +871,8 @@ if __name__ == "__main__":
         #room_key = "test-room"
         #player_name = "Spacha"
 
-        client = GameClient('localhost', 8765)
+        #client = GameClient('localhost', 8765)
+        client = GameClient('192.168.1.154', 8765)
         client.set_connection_info(room_key, player_name)
         client.run()
 

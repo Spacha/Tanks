@@ -37,13 +37,16 @@ MAP = {
     "start_directions": [Vector(1, 0), -Vector(1, 0), Vector(1, 0)]
 }
 
-TICK_RATE = 60 # TODO: Update physics 60 TPS but send update 30 TPS.
+# Physics: 120 FPS, updates: 30 FPS
+TICK_RATE = 120
+FRAMES_PER_UPDATE = 4 # send update every 4th loop = 30 UPS
 WORLD_WIDTH, WORLD_HEIGHT = (1200, 900)
 
 if (WORLD_WIDTH, WORLD_HEIGHT) != MAP["world_size"]:
     print("Warning: Terrain size doesn't match with world size!")
 
 PLAYER_SINK = 6
+MAX_HP = 100
 
 MAX_AP              = 100
 MOVEMENT_AP_COST    = 20
@@ -100,7 +103,8 @@ def generate_geometry(surface, space):
 
 def pre_solve_static(arb, space, data):
     s = arb.shapes[0]
-    print("Body removed.", s.body.position)
+    if s.body is Tank:
+        s.body.lose()
     space.remove(s.body, s)
     return False
 
@@ -196,6 +200,8 @@ class Tank(GameObject):
         self.last_position = self.position
         self.fallen_over = False
         self.reset_angle = False
+        self.health_points = MAX_HP
+        self.has_lost = False
 
     def initialize(self):
         super().initialize()
@@ -279,14 +285,27 @@ class Tank(GameObject):
     #   MULTIPLAYER-SPECIFIC
     #----------------------------------
 
+    def lose(self):
+        self.action_points = 0.0
+        self.health_points = 0.0
+        self.has_lost = True
+
+    def take_damage(self, damage):
+        # TODO: account for armor etc.
+        self.health_points -= damage
+        
+        if self.health_points <= 0:
+            self.health_points = 0.0
+            self.lose()
+
     def shoot(self):
         if self.action_points >= SHOOT_AP_COST:
             self.action_points -= SHOOT_AP_COST
             barrel_dir_vect = Vec2d(self.direction.x * cos(radians(self.barrel_angle) - self.direction.x * self.angle), -sin(radians(self.barrel_angle) - self.direction.x * self.angle))
             #projectile = Projectile(self.position + 50 * barrel_dir_vect)
-            projectile = Projectile(self.position + 18 * barrel_dir_vect)
-            #projectile.apply_impulse_at_local_point(self.driving_direction * self.rotation_vector * 50000, (0, 0))
+            projectile = Projectile(self.position + 30 * barrel_dir_vect)
             projectile.velocity = 1000 * barrel_dir_vect
+            #self.apply_impulse_at_local_point(-20000 * barrel_dir_vect)
 
             self.game.add_obj(projectile)
             self.game.space.add(projectile, projectile.shape)
@@ -319,11 +338,13 @@ class Tank(GameObject):
             # mostly static
             'class':                'Tank',
             'id':                   self.id,
-            'has_turn':             not self.turn_ended,
+            'has_turn':             bool(not self.turn_ended),
+            'has_lost':             bool(self.has_lost),
             'owner_id':             self.owner_id,
             'model':                self.sprite_model,
             'name':                 self.name,
             # often changed
+            'health_points':        float(self.health_points),
             'action_points':        float(self.action_points),
             'barrel_angle':         self.barrel_angle
             #'barrel_angle_rate':    self.barrel_angle_rate
@@ -367,13 +388,21 @@ class Projectile(GameObject):
         pg.draw.circle(scr, pg.Color('yellow'), self.position, 5)
 
     def explode(self, space):
+        def calc_explosion_effect(dist, max_dist, max_effect):
+            return max_effect / max_dist * (max_dist + 1 - dist)
         # TODO: Not always need to update the map (explosion over ground etc)!
         self.game.erase_map_circle(self.position, 30)
-        for s in space.shapes:  # this is very naive (assumes point-like shapes)
+        for s in space.shapes:
             if type(s.body) is Tank:
-                if self.position.get_distance(s.body.position) <= 50:
-                    s.body.apply_impulse_at_local_point(50000 * (s.body.position - self.position))
-                    print("A Tank was damaged!")
+                # this is very naive (assumes point-like shapes)
+                dist = self.position.get_distance(s.body.position)
+                # dist = 75 -> explosion_effect = 1
+                # dist = 0  -> explosion_effect = 100
+                if dist <= 120:
+                    explosion_effect = calc_explosion_effect(dist, 120, 100)
+                    impulse_direction = (s.body.position - self.position).normalized()
+                    s.body.apply_impulse_at_local_point(20000 * explosion_effect * impulse_direction)
+                    s.body.take_damage(explosion_effect / 3)  # direct hit is about 30 % of HP
 
         self.game.delete_obj(self.id)
         self.exploded = True
@@ -549,7 +578,8 @@ class Game:
 
         self.check_events()
         self.update()
-        self.send_update()
+        if self.current_tick % FRAMES_PER_UPDATE == 0:  # time to send an update
+            self.send_update()
         self.tick()
 
     def check_events(self):
@@ -883,5 +913,6 @@ class GameServer:
 
 
 if __name__ == "__main__":
-    server = GameServer('localhost', 8765)
+    #server = GameServer('localhost', 8765)
+    server = GameServer('192.168.1.154', 8765)
     server.run()
