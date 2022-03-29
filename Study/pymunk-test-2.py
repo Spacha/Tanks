@@ -54,7 +54,7 @@ def generate_geometry(surface, space):
             p1 = line[i]
             p2 = line[i + 1]
             shape = pymunk.Segment(space.static_body, p1, p2, 1)
-            shape.friction = 0.5
+            shape.friction = 1
             shape.color = pygame.Color("red")
             shape.generated = True
             space.add(shape)
@@ -110,7 +110,7 @@ def main():
         shape.friction = 0.5
         space.add(body, shape)
     '''
-    mass = 500
+    mass = 2000
     poly_w, poly_h = (40, 20)
     moment = pymunk.moment_for_box(mass, (poly_w, poly_h))
     player = pymunk.Body(mass, moment)
@@ -123,11 +123,13 @@ def main():
         (-poly_w / 2,  poly_h / 2),   # bottom-right
     ]
     shape = pymunk.Poly(player, poly_points)
-    shape.friction = 0
+    shape.friction = 0.75
     space.add(player, shape)
 
     draw_options = pymunk.pygame_util.DrawOptions(screen)
     pymunk.pygame_util.positive_y_is_up = False
+
+    player_moving = 0
 
     fps = 60
     while True:
@@ -147,11 +149,11 @@ def main():
                         space.remove(s)
 
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_LEFT:
-                player.velocity = Vec2d(-20.0, player.velocity.y)
+                player_moving = -1
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_RIGHT:
-                player.velocity = Vec2d(20.0, player.velocity.y)
+                player_moving = +1
             elif event.type == pygame.KEYUP and event.key in [pygame.K_LEFT, pygame.K_RIGHT]:
-                player.velocity = Vec2d(0.0, player.velocity.y)
+                player_moving = 0
 
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_g:
                 generate_geometry(terrain_surface, space)
@@ -165,7 +167,7 @@ def main():
                 poly_w, poly_h = (20, 10)
                 moment = pymunk.moment_for_box(mass, (poly_w, poly_h))
                 body = pymunk.Body(mass, moment)
-                body.position = 450, 120
+                body.position = pygame.mouse.get_pos()
                 #shape = pymunk.Circle(body, 10)
                 # Create poly-rect:
                 poly_points = [
@@ -181,13 +183,17 @@ def main():
                 body.position = pygame.mouse.get_pos()
                 shape = pymunk.Circle(body, 10)
                 '''
-                shape.friction = 0.5
+                shape.friction = 1
                 space.add(body, shape)
 
             else:
                 color = pygame.Color("pink")
                 pos = pygame.mouse.get_pos()
                 pygame.draw.circle(terrain_surface, color, pos, 25)
+
+        player.velocity = Vec2d(player_moving * 20.0, player.velocity.y)
+        #player.velocity = Vec2d(20.0, player.velocity.y)
+        #player.velocity = Vec2d(0.0, player.velocity.y)
 
         space.step(1.0 / fps)
 

@@ -4,20 +4,6 @@ from pygame.math import Vector2 as Vector
 from math import sqrt, sin, cos, tan
 from random import randint
 
-def rotate(surface, angle, pivot, offset):
-    """Rotate the surface around the pivot point.
-    Args:
-        surface (pygame.Surface): The surface that is to be rotated.
-        angle (float): Rotate by this angle.
-        pivot (tuple, list, pygame.math.Vector2): The pivot point.
-        offset (pygame.math.Vector2): This vector is added to the pivot.
-    """
-    rotated_image = pg.transform.rotate(surface, -angle)  # Rotate the image.
-    rotated_offset = offset.rotate(angle)  # Rotate the offset vector.
-    # Add the offset vector to the center/pivot point to shift the rect.
-    rect = rotated_image.get_rect(center=pivot+rotated_offset)
-    return rotated_image, rect  # Return the rotated image and shifted rect.
-
 SCR_WIDTH, SCR_HEIGHT = (640,480)
 FPS = 60
 
@@ -135,7 +121,7 @@ obj = GameObject((0,0))
 poly_rect = Rect(pg.Color('black'), (320,240), 60, 30)
 point_pos = Vector(200,240)
 
-N = 500
+N = 1000
 points = []
 for i in range(N):
     # 0: position vector, 1: collides, 2: circle contains

@@ -3,7 +3,7 @@ from pygame.math import Vector2 as Vector
 
 from math import degrees, radians
 
-import pymunk
+import pymunk as pm
 import pymunk.autogeometry
 import pymunk.pygame_util
 from pymunk.vec2d import Vec2d
@@ -43,17 +43,17 @@ def generate_geometry(surface, space):
             print(e)
             return 0
 
-    line_set = pymunk.autogeometry.march_soft(
+    line_set = pm.autogeometry.march_soft(
         BB(0, 0, SCR_WIDTH - 1, SCR_HEIGHT - 1), 180, 180, 90, sample_func
     )
 
     for polyline in line_set:
-        line = pymunk.autogeometry.simplify_curves(polyline, 1.0)
+        line = pm.autogeometry.simplify_curves(polyline, 1.0)
 
         for i in range(len(line) - 1):
             p1 = line[i]
             p2 = line[i + 1]
-            shape = pymunk.Segment(space.static_body, p1, p2, 1)
+            shape = pm.Segment(space.static_body, p1, p2, 1)
             shape.collision_type = 2
             shape.friction = 0.5
             shape.color = pg.Color("red")
@@ -76,14 +76,14 @@ clock = pg.time.Clock()
 # Init Pymunk
 #--------------------------------------
 
-space = pymunk.Space()
+space = pm.Space()
 space.gravity = 0, 980
 # static walls of the world
 static = [
-    pymunk.Segment(space.static_body, (-50, -50), (-50, SCR_HEIGHT + 50), 5),
-    pymunk.Segment(space.static_body, (-50, SCR_HEIGHT + 50), (SCR_WIDTH + 50, SCR_HEIGHT + 50), 5),
-    pymunk.Segment(space.static_body, (SCR_WIDTH + 50, SCR_HEIGHT + 50), (SCR_WIDTH + 50, -50), 5),
-    pymunk.Segment(space.static_body, (-50, -50), (SCR_WIDTH + 50, -50), 5),
+    pm.Segment(space.static_body, (-50, -50), (-50, SCR_HEIGHT + 50), 5),
+    pm.Segment(space.static_body, (-50, SCR_HEIGHT + 50), (SCR_WIDTH + 50, SCR_HEIGHT + 50), 5),
+    pm.Segment(space.static_body, (SCR_WIDTH + 50, SCR_HEIGHT + 50), (SCR_WIDTH + 50, -50), 5),
+    pm.Segment(space.static_body, (-50, -50), (SCR_WIDTH + 50, -50), 5),
 ]
 for s in static:
     s.collision_type = 1
@@ -108,7 +108,7 @@ map_rect = map_sprite.get_rect(bottomleft=(0, SCR_HEIGHT))
 terrain_surface.blit(map_sprite, map_rect)
 generate_geometry(terrain_surface, space)
 
-player_sprite_right = pg.image.load("img/tank_body_cropped.png")
+player_sprite_right = pg.image.load("img/tank1_base_.png")
 player_sprite_left = pg.transform.flip(player_sprite_right, True, False)
 
 #--------------------------------------
@@ -117,8 +117,8 @@ player_sprite_left = pg.transform.flip(player_sprite_right, True, False)
 player_sink = 6
 mass = 2000
 poly_w, poly_h = (54, 28 - player_sink) #(40, 20)
-moment = pymunk.moment_for_box(mass, (poly_w, poly_h))
-player = pymunk.Body(mass, moment)
+moment = pm.moment_for_box(mass, (poly_w, poly_h))
+player = pm.Body(mass, moment)
 player.position = (90, 540)
 player.center_of_gravity = Vec2d(0, 12) # VERY low-center of gravity
 # Create poly-rect:
@@ -128,12 +128,12 @@ poly_points = [
     ( poly_w / 2,  poly_h / 2),   # bottom-left
     (-poly_w / 2,  poly_h / 2),   # bottom-right
 ]
-player_shape = pymunk.Poly(player, poly_points)
+player_shape = pm.Poly(player, poly_points)
 player_shape.friction = 10.0
 space.add(player, player_shape)
 
-draw_options = pymunk.pygame_util.DrawOptions(scr)
-pymunk.pygame_util.positive_y_is_up = False
+draw_options = pm.pygame_util.DrawOptions(scr)
+pm.pygame_util.positive_y_is_up = False
 
 TOTAL_AP            = 100
 MOVEMENT_AP_COST    = 20
@@ -167,6 +167,8 @@ while running:
                 debug_mode = not debug_mode
             elif event.key in [pg.K_LEFT, pg.K_RIGHT]:
                 direction = 0
+            elif event.key == pg.K_TAB:
+                action_points = TOTAL_AP
         elif event.type == pg.KEYDOWN:
             if event.key == pg.K_LEFT:
                 direction = -1
@@ -199,12 +201,13 @@ while running:
         #player.apply_impulse_at_local_point(direction * player.rotation_vector * 20000)
         #if player_shape.shapes_collide(space.static_body): # on ground
         if on_ground:
-            player.friction = 0.0
+            #player_shape.friction = 0.0
             player.apply_impulse_at_local_point(direction * player.rotation_vector * 50000, (0, 14))
         #player.apply_force_at_local_point(-direction * player.rotation_vector * 2E6)
         #player.friction = -4000 / space.gravity.y
     else:
-        player.friction = 10.0
+        #player_shape.friction = 10.0
+        pass
 
 
     space.step(1.0 / FPS)
@@ -224,7 +227,7 @@ while running:
     scr.fill( pg.Color('deepskyblue1') )
 
     # rotate(surface, angle, pivot, offset):
-    rotated_sprite, sprite_rect = rotate(player_sprite_right, degrees(player.angle), (0, 0), Vector(0, player_sink))
+    rotated_sprite, sprite_rect = rotate(player_sprite_right, degrees(player.angle), (0, 0), Vector(0, player_sink - 14))
     #scr.blit(pg.transform.rotate(player_sprite_right, -degrees(player.angle)), player.position - rotation_offset)
 
     scr.blit(rotated_sprite, sprite_rect.move(player.position))
@@ -232,19 +235,19 @@ while running:
     if debug_mode:
         space.debug_draw(draw_options)
 
-    if direction:
-        direction_text = font.render(f"Player movement: {'left' if direction < 0 else 'right'}", True, pg.Color('black'))
-        scr.blit(direction_text, direction_text.get_rect(topleft=(10,10)))
+        if direction:
+            direction_text = font.render(f"Player movement: {'left' if direction < 0 else 'right'}", True, pg.Color('black'))
+            scr.blit(direction_text, direction_text.get_rect(topleft=(10,10)))
 
-    if on_ground:
-        t = font.render(f"On ground", True, pg.Color('black'))
-        scr.blit(t, t.get_rect(topleft=(10,30)))
+        if on_ground:
+            t = font.render(f"On ground", True, pg.Color('black'))
+            scr.blit(t, t.get_rect(topleft=(10,30)))
 
 
     # draw "no action points" notification
     if action_points <= 0:
         t1 = bigfont.render(f"End of action points!", True, pg.Color('white'))
-        t2 = font.render(f"Press [SHIFT] to end turn.", True, pg.Color('black'))
+        t2 = font.render(f"Press [TAB] to end turn.", True, pg.Color('black'))
         pg.draw.rect(scr, (175,28,0), pg.Rect( 0, 40, SCR_WIDTH, 90 ))
         pg.draw.line(scr, (120,18,0), (0, 40), (SCR_WIDTH, 40))
         pg.draw.line(scr, (120,18,0), (0, 40 + 90), (SCR_WIDTH, 40 + 90))
