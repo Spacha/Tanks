@@ -282,7 +282,7 @@ class Tank(GameObject):
     def shoot(self):
         if self.action_points >= SHOOT_AP_COST:
             self.action_points -= SHOOT_AP_COST
-            barrel_dir_vect = Vec2d(self.direction.x * cos(radians(self.barrel_angle) - self.angle), -sin(radians(self.barrel_angle) - self.angle))
+            barrel_dir_vect = Vec2d(self.direction.x * cos(radians(self.barrel_angle) - self.direction.x * self.angle), -sin(radians(self.barrel_angle) - self.direction.x * self.angle))
             #projectile = Projectile(self.position + 50 * barrel_dir_vect)
             projectile = Projectile(self.position + 18 * barrel_dir_vect)
             #projectile.apply_impulse_at_local_point(self.driving_direction * self.rotation_vector * 50000, (0, 0))
@@ -359,16 +359,22 @@ class Projectile(GameObject):
                 break
 
         if self.collides:
-            self.explode()
+            self.explode(space)
 
     def draw(self, scr, hud):
         super().draw(scr, hud)
         # MULTIPLAYER - NOT IN SERVER.
         pg.draw.circle(scr, pg.Color('yellow'), self.position, 5)
 
-    def explode(self):
+    def explode(self, space):
         # TODO: Not always need to update the map (explosion over ground etc)!
         self.game.erase_map_circle(self.position, 30)
+        for s in space.shapes:  # this is very naive (assumes point-like shapes)
+            if type(s.body) is Tank:
+                if self.position.get_distance(s.body.position) <= 50:
+                    s.body.apply_impulse_at_local_point(50000 * (s.body.position - self.position))
+                    print("A Tank was damaged!")
+
         self.game.delete_obj(self.id)
         self.exploded = True
         # TODO: check players and damage them
