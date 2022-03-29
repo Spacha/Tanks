@@ -6,7 +6,7 @@ from pygame.math import Vector2 as Vector
 import janus
 import random
 
-from math import degrees, radians
+from math import degrees, radians, pi as PI
 
 import pymunk as pm
 import pymunk.autogeometry
@@ -23,8 +23,8 @@ MAP = {
     "world_size": (1200, 900),
     "terrain_file": "Study/img/map-cave.png",
     "max_players": 2,
-    "start_positions": [(90, 540), (1110, 540)],
-    "start_directions": [+1, -1]
+    "start_positions": [(90, 540), (1110, 540), (550, 230)],
+    "start_directions": [Vector(1, 0), -Vector(1, 0), Vector(1, 0)]
 }
 
 #TICK_RATE = 1  # must match with the server
@@ -40,6 +40,7 @@ PLAYER_SINK = 6
 MAX_AP              = 100
 MOVEMENT_AP_COST    = 20
 SHOOT_AP_COST       = 25
+RESET_AP_COST       = 25
 
 TANK_MODELS = [
     "tank1_blue",
@@ -49,47 +50,6 @@ TANK_MODELS = [
     #"tank2_black",
 ]
 
-def generate_geometry(surface, space):
-    """
-    Used by the game engine to generate a terrain based on an image (surface).
-    """
-    for s in space.shapes:
-        if hasattr(s, "generated") and s.generated:
-            space.remove(s)
-
-    def sample_func(point):
-        try:
-            p = int(point[0]), int(point[1])
-            color = surface.get_at(p)
-            #return color.hsla[2]  # use lightness
-            return color[3]  # use alpha
-        except Exception as e:
-            print(e)
-            return 0
-
-    line_set = pm.autogeometry.march_soft(
-        BB(0, 0, WORLD_WIDTH - 1, WORLD_HEIGHT - 1), 180, 180, 90, sample_func
-    )
-
-    for polyline in line_set:
-        line = pm.autogeometry.simplify_curves(polyline, 1.0)
-
-        for i in range(len(line) - 1):
-            p1 = line[i]
-            p2 = line[i + 1]
-            shape = pm.Segment(space.static_body, p1, p2, 1)
-            shape.collision_type = 2
-            shape.friction = 0.5
-            shape.color = pg.Color("red")
-            shape.generated = True
-            shape.is_ground = True
-            space.add(shape)
-
-def pre_solve_static(arb, space, data):
-    s = arb.shapes[0]
-    space.remove(s.body, s)
-    print("Body removed.")
-    return False
 
 class GameEvent:
     def __init__(self):
@@ -400,8 +360,6 @@ class Game:
 
     def check_server_events(self):
         messages = self.get_messages()
-        if not messages:
-            return
 
         for message in messages:
             #print("Received:", message)
@@ -433,6 +391,17 @@ class Game:
                             # update existing object
                             obj = self.objects.get(obj_id)
                             obj.update_state(obj_state)
+
+                if 'map_update' in state:
+                    print("MUPDATE!")
+                    for utype, upos in state['map_update']:
+                        if utype == 'CIRCLE':
+                            #pg.draw.circle(self.terrain_surface, pg.Color('magenta'), upos, 60)
+                            update_surf = pg.Surface((2*60, 2*60), flags=pg.SRCALPHA)
+                            update_surf.fill(pg.Color('white'))
+                            pg.draw.circle( update_surf, (0,0,0,0), (60,60), 60)
+                            self.terrain_surface.blit( update_surf, update_surf.get_rect(center=(upos)), special_flags=pg.BLEND_RGBA_MULT )
+
 
 
 

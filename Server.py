@@ -12,6 +12,7 @@ from contextlib import suppress
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 import pygame as pg
 from pygame.math import Vector2 as Vector
+from math import pi as PI
 import janus
 import random
 
@@ -32,8 +33,8 @@ MAP = {
     "world_size": (1200, 900),
     "terrain_file": "Study/img/map-cave.png",
     "max_players": 2,
-    "start_positions": [(90, 540), (1110, 540)],
-    "start_directions": [Vector(1, 0), -Vector(1, 0)]
+    "start_positions": [(90, 540), (1110, 540), (550, 230)],
+    "start_directions": [Vector(1, 0), -Vector(1, 0), Vector(1, 0)]
 }
 
 TICK_RATE = 60 # TODO: Update physics 60 TPS but send update 30 TPS.
@@ -47,6 +48,7 @@ PLAYER_SINK = 6
 MAX_AP              = 100
 MOVEMENT_AP_COST    = 20
 SHOOT_AP_COST       = 25
+RESET_AP_COST       = 25
 
 TANK_MODELS = [
     "tank1_blue",
@@ -69,7 +71,11 @@ def generate_geometry(surface, space):
             p = int(point[0]), int(point[1])
             color = surface.get_at(p)
             #return color.hsla[2]  # use lightness
-            return color[3]  # use alpha
+            #return color[3]  # use alpha
+            magenta = color == pg.Color('magenta')
+            if magenta:
+                return 0
+            return color[3]  # use alpha or magenta
         except Exception as e:
             print(e)
             return 0
@@ -185,6 +191,8 @@ class Tank(GameObject):
         self.action_points = 0.0
         self.turn_ended = True
         self.last_position = self.position
+        self.fallen_over = False
+        self.reset_angle = False
 
     def initialize(self):
         super().initialize()
@@ -206,6 +214,8 @@ class Tank(GameObject):
                 if self.shape.shapes_collide(s).points:
                     self.on_ground = True
                     break
+
+        self.fallen_over = PI/2 <= self.angle <= 3/2*PI
 
         if self.action_points <= 0:
             self.action_points = 0.0
@@ -250,6 +260,9 @@ class Tank(GameObject):
         if pg.K_TAB in released:
             if not self.turn_ended:
                 self.end_turn()
+        if pg.K_r in released:
+            if self.fallen_over and self.action_points >= RESET_AP_COST:
+                self.reset_angle = True
 
         if pg.K_UP in released or pg.K_DOWN in released:
             self.barrel_angle_rate = 0
@@ -270,6 +283,12 @@ class Tank(GameObject):
         self.action_points = 0.0
 
     def update_action_points(self, delta):
+        if self.reset_angle:
+            self.angle = 0
+            self.position -= Vec2d(0, 10)
+            self.action_points -= RESET_AP_COST
+            self.reset_angle = False
+
         if self.on_ground:
             movement = (self.position - self.last_position).length
             if self.driving_direction != 0 and movement > 0.1:
@@ -393,6 +412,8 @@ class Game:
         self.clients = ObjectContainer()
         self.objects = ObjectContainer()
 
+        self.TEST_map_updates = []
+
     def init_game(self):
         #--------------------------------------
         # Init Pygame
@@ -420,12 +441,12 @@ class Game:
 
         self.space.add_collision_handler(0, 1).pre_solve = pre_solve_static
 
-        terrain_surface = pg.Surface((WORLD_WIDTH, WORLD_HEIGHT), flags=pg.SRCALPHA)
+        self.terrain_surface = pg.Surface((WORLD_WIDTH, WORLD_HEIGHT), flags=pg.SRCALPHA)
 
         map_sprite = pg.image.load(MAP["terrain_file"])
         map_rect = map_sprite.get_rect(bottomleft=(0, WORLD_HEIGHT))
-        terrain_surface.blit(map_sprite, map_rect)
-        generate_geometry(terrain_surface, self.space)
+        self.terrain_surface.blit(map_sprite, map_rect)
+        generate_geometry(self.terrain_surface, self.space)
 
     def initialize(self):
         self.init_world()
@@ -473,6 +494,12 @@ class Game:
                     elif event_type == 'KEYUP':
                         key = event['value']
                         player.key_up([key])
+
+                        # TEST:
+                        if key == pg.K_SPACE:
+                            pg.draw.circle(self.terrain_surface, pg.Color('magenta'), (380, 660), 60)
+                            generate_geometry(self.terrain_surface, self.space)
+                            self.TEST_map_updates.append(('CIRCLE', (380, 660)))
 
         if self.clients.count() > 0:
             if self.objects.get(self.current_player.obj_id).turn_ended:
@@ -586,6 +613,11 @@ class Game:
     def get_game_state(self):
         game_state = {}
         game_state['current_player'] = self.current_player.id
+
+        if self.TEST_map_updates:
+            game_state['map_update'] = self.TEST_map_updates
+            self.TEST_map_updates = []
+
         objects = {}
 
         for obj_id, obj in self.objects.all():
