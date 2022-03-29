@@ -603,7 +603,7 @@ class Tank(GameObject):
         # Draw health bar
         health_percentage = self.health_points / MAX_HP
         hp_color = ((1 - health_percentage) * 255, health_percentage * 255, 0)
-        hp_bar_frame_rect = pg.Rect(self.position + (-50, 60), (100, 20))
+        hp_bar_frame_rect = pg.Rect(self.position + (-50, 50), (100, 20))
         hp_bar_rect = hp_bar_frame_rect.inflate(-4, -4)
         hp_bar_rect.w = hp_bar_rect.w * health_percentage
 
