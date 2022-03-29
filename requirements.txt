@@ -1,0 +1,4 @@
+websockets>=10.2
+pygame>=2.1.2
+pymunk>=6.2.1
+janus>=1.0.0
