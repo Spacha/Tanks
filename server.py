@@ -31,13 +31,15 @@ def decode_msg(text):
 
 MAPS = [{
     "world_size": (1200, 900),
-    "terrain_file": "Study/img/map-cave.png",
+    "terrain_file": "study/img/map-cave.png",
+    "background_file": "study/img/background_sky.png",
     "max_players": 2,
     "start_positions": [(90, 540), (1110, 540), (550, 230)],
     "start_directions": [Vector(1, 0), -Vector(1, 0), Vector(1, 0)]
 }, {
     "world_size": (1200, 900),
-    "terrain_file": "Study/img/map-obstacle-course.png",
+    "terrain_file": "study/img/map-obstacle-course.png",
+    "background_file": "study/img/background_sky.png",
     "max_players": 1,
     "start_positions": [(90, 540)],
     "start_directions": [Vector(1, 0)]

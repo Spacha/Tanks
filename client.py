@@ -21,13 +21,15 @@ def decode_msg(text):
 
 MAPS = [{
     "world_size": (1200, 900),
-    "terrain_file": "Study/img/map-cave.png",
+    "terrain_file": "study/img/map-cave.png",
+    "background_file": "study/img/background-sky.png",
     "max_players": 2,
     "start_positions": [(90, 540), (1110, 540), (550, 230)],
     "start_directions": [Vector(1, 0), -Vector(1, 0), Vector(1, 0)]
 }, {
     "world_size": (1200, 900),
-    "terrain_file": "Study/img/map-obstacle-course.png",
+    "terrain_file": "study/img/map-obstacle-course.png",
+    "background_file": "study/img/background-sky.png",
     "max_players": 1,
     "start_positions": [(90, 540)],
     "start_directions": [Vector(1, 0)]
@@ -217,6 +219,7 @@ class Game:
         self.terrain_surface = pg.Surface((WORLD_WIDTH, WORLD_HEIGHT), flags=pg.SRCALPHA)
 
         self.map_sprite = pg.image.load(MAP["terrain_file"])
+        self.background_sprite = pg.image.load(MAP["background_file"])
         map_rect = self.map_sprite.get_rect(bottomleft=(0, WORLD_HEIGHT))
         self.terrain_surface.blit(self.map_sprite, map_rect)
 
@@ -293,7 +296,8 @@ class Game:
         self.send_event(self.update_event)
 
     def draw(self):
-        self.main_layer.fill((112, 197, 255))
+        #self.main_layer.fill((112, 197, 255))
+        self.main_layer.blit(self.background_sprite, (0,0))
         #self.world_hud_layer.fill(0)
         self.hud_layer.fill(0)
 
@@ -489,8 +493,8 @@ class TankSprite:  # TODO: use pg.Sprite as a base!
         self._initialize()
 
     def _initialize(self):
-        base_path = os.path.join('Study', 'img', f"{self.model}_base.png")
-        barrel_path = os.path.join('Study', 'img', f"{self.model}_barrel.png")
+        base_path = os.path.join('study', 'img', f"{self.model}_base.png")
+        barrel_path = os.path.join('study', 'img', f"{self.model}_barrel.png")
         # preserve the originals for re-blit
         self.sprite_right_original = pg.image.load(base_path)
         self.barrel_sprite_original = pg.image.load(barrel_path)
