@@ -208,6 +208,7 @@ class Game:
         self.rx_queue = rx_queue
         self.send_message = lambda m: send_message_cb(m)
         self.joined = False
+        self.join_rejected = False
         self.server_tick = 0
 
         self.scr_size = Vector(WIDTH, HEIGHT)
@@ -377,7 +378,7 @@ class Game:
     #----------------------------------
 
     def wait_for_join(self):
-        while not self.joined:
+        while not (self.joined or self.join_rejected):
             time.sleep(0.25)
 
         if self.client_id is not None:
@@ -386,6 +387,10 @@ class Game:
     def join(self, client_id):
         self.client_id = client_id  # get current player's client id
         self.joined = True
+
+    def reject_join(self, reason="Unknown"):
+        self.join_rejected = True
+        print(f"Join rejected. Reason: {reason}.")
 
     def get_messages(self):
         messages = []
@@ -746,15 +751,18 @@ class GameClient:
                     else:  # wait for join
                         if message['type'] == 'joined':
                             self.game.join(message['client_id'])
-
+                        elif message['type'] == 'join-rejected':
+                            self.game.reject_join(message['reason'])
+                            break
 
         except websockets.exceptions.ConnectionClosedError:
             print("Server closed connection during receive.")
-            if self.running:
-                self.stop()
         except BaseException as e:
             if e is not KeyboardInterrupt:
                 print("Recv thread exited on exception:", e)
+
+        if self.running:
+            self.stop()
 
         self.game.rx_queue.close()
 

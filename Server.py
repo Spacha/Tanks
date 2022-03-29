@@ -306,9 +306,10 @@ class ObjectContainer:
         else:
             raise ValueError('Object ID must be numeric!')
 
-    def count(self):
+    def count(self, include_pending=False):
         # TODO: ignore pending deletes?
-        return len(self._objs)
+        pending = len(self._pending_addition) if include_pending else 0
+        return len(self._objs) + pending
 
     def apply_pending_changes(self):
         self._delete_pending()
@@ -344,6 +345,7 @@ class Game:
         self.rx_queue = janus.Queue()
         self.send_message = lambda m, c: send_message_cb(self.room_key, m, c)
         self.future = None
+        self.full = False
 
         # Game stuff...
         self.init_game()
@@ -488,6 +490,10 @@ class Game:
         self.add_obj(obj)
         self.space.add(obj, obj.shape)
         client.obj_id = obj.id
+
+        if self.clients.count(include_pending=True) >= MAP["max_players"]:
+            self.full = True
+
         return client
 
     def leave(self, client_id):
@@ -633,9 +639,14 @@ class GameServer:
                     else:
                         room = self.rooms[room_key]
 
-                    client = room.join(socket, message['player_name'])
-                    print(f"Player '{message['player_name']}' (client ID '{client.id}') joined to room '{room.room_key}'.")
-                    await client.socket.send(encode_msg({'type': 'joined', 'client_id': client.id}))
+                    # check if room is full
+                    if room.full:
+                        print(f"Player '{message['player_name']}' could not join room '{room.room_key}' (full).")
+                        await socket.send(encode_msg({'type': 'join-rejected', 'reason': 'Room is full'}))
+                    else:
+                        client = room.join(socket, message['player_name'])
+                        print(f"Player '{message['player_name']}' (client ID '{client.id}') joined to room '{room.room_key}'.")
+                        await client.socket.send(encode_msg({'type': 'joined', 'client_id': client.id}))
 
                 elif room:  # room is already up...
                     #await self.room.rx_queue.async_q.put( decode_msg(message_raw) )
