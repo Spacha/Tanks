@@ -44,7 +44,7 @@ if (WORLD_WIDTH, WORLD_HEIGHT) != MAP["world_size"]:
 
 PLAYER_SINK = 6
 
-TOTAL_AP            = 100
+MAX_AP              = 100
 MOVEMENT_AP_COST    = 20
 SHOOT_AP_COST       = 25
 
@@ -137,6 +137,15 @@ class GameObject(pm.Body):
     #   MULTIPLAYER-SPECIFIC
     #----------------------------------
 
+    def get_state(self):
+        return {
+            'position':             tuple(self.position),
+            'angle':                float(self.angle),
+            'direction':            tuple(self.direction),
+            #'velocity':             tuple(self.velocity),
+            #'angular_velocity':     ...,
+        }
+
     def serialize(self):
         pass
 
@@ -173,10 +182,13 @@ class Tank(GameObject):
         # MULTIPLAYER - SERVER
         self.driving_direction = 0      # being driven by user?
         self.owner_id = None            # which client this object belongs to
+        self.action_points = 0.0
+        self.turn_ended = True
+        self.last_position = self.position
 
     def initialize(self):
         super().initialize()
-        # MULTIPLAYER - NOT IN SERVER.
+        # MULTIPLAYER - SERVER.
 
     def update(self, delta, space):
         super().update(delta)
@@ -194,6 +206,10 @@ class Tank(GameObject):
                 if self.shape.shapes_collide(s).points:
                     self.on_ground = True
                     break
+
+        if self.action_points <= 0:
+            self.action_points = 0.0
+            self.driving_direction = 0
 
         if self.driving_direction != 0:
             self.direction = self.DIR_LEFT if self.driving_direction < 0 else self.DIR_RIGHT
@@ -231,6 +247,10 @@ class Tank(GameObject):
         
         # MULTIPLAYER - SERVER.
 
+        if pg.K_TAB in released:
+            if not self.turn_ended:
+                self.end_turn()
+
         if pg.K_UP in released or pg.K_DOWN in released:
             self.barrel_angle_rate = 0
         if pg.K_LEFT in released or pg.K_RIGHT in released:
@@ -241,22 +261,37 @@ class Tank(GameObject):
     #   MULTIPLAYER-SPECIFIC
     #----------------------------------
 
+    def start_turn(self):
+        self.turn_ended = False
+        self.action_points = MAX_AP
+
+    def end_turn(self):
+        self.turn_ended = True
+        self.action_points = 0.0
+
+    def update_action_points(self, delta):
+        if self.on_ground:
+            movement = (self.position - self.last_position).length
+            if self.driving_direction != 0 and movement > 0.1:
+                #print(player.position - player_last_position, movement)
+                self.action_points -= movement * delta * MOVEMENT_AP_COST
+        self.last_position = self.position
+
     def get_state(self):
+        super_state = super().get_state()
         return {
             # mostly static
             'class':                'Tank',
             'id':                   self.id,
+            'has_turn':             not self.turn_ended,
             'owner_id':             self.owner_id,
             'model':                self.sprite_model,
             'name':                 self.name,
             # often changed
-            'position':             tuple(self.position),
-            'angle':                float(self.angle),
-            'direction':            tuple(self.direction),
-            'barrel_angle':         self.barrel_angle,
-            #'velocity':             tuple(self.velocity),
+            'action_points':        float(self.action_points),
+            'barrel_angle':         self.barrel_angle
             #'barrel_angle_rate':    self.barrel_angle_rate
-        }
+        } | super_state
         
 
 # ------------------------------------------------------------------------------
@@ -346,6 +381,7 @@ class Game:
         self.send_message = lambda m, c: send_message_cb(self.room_key, m, c)
         self.future = None
         self.full = False
+        self.current_player = None
 
         # Game stuff...
         self.init_game()
@@ -415,8 +451,6 @@ class Game:
 
     def check_events(self):
         messages = self.get_messages()
-        if not messages:
-            return
 
         for message in messages:
             if message['type'] == 'game_event':
@@ -424,8 +458,11 @@ class Game:
                     client_id = message['client_id']
                     event_type = event['type']
 
-                    client = self.clients.get(client_id)
-                    player = self.objects.get(client.obj_id)
+                    # check if there are old messages in queue from players that have left...
+                    if self.clients.exists(client_id):
+                        client = self.clients.get(client_id)
+                    if self.objects.exists(client.obj_id):
+                        player = self.objects.get(client.obj_id)
 
                     # type: KEYDOWN, value: key
                     if event_type == 'KEYDOWN':
@@ -437,6 +474,29 @@ class Game:
                         key = event['value']
                         player.key_up([key])
 
+        if self.clients.count() > 0:
+            if self.objects.get(self.current_player.obj_id).turn_ended:
+                self.next_turn()
+
+    def next_turn(self, client_id=None):
+        if client_id is None:
+            # find next client in the list (wraps back to the previous current if alone)
+            client_id = self.current_player.id + 1
+            client = None
+            while client is None:
+                try:
+                    client = self.clients.get(client_id)
+                except:
+                    client = None
+                    client_id = (client_id + 1)
+                    if client_id > self.clients.last_id:
+                        client_id = 0
+        else:
+            # get certain client
+            client = self.clients.get(client_id)
+        
+        self.current_player = client
+        self.objects.get(self.current_player.obj_id).start_turn()
 
     def update(self):
         for obj_id, obj in self.objects.all():
@@ -444,6 +504,7 @@ class Game:
 
         self.space.step(1.0 / TICK_RATE)
 
+        self.objects.get(self.current_player.obj_id).update_action_points(self.delta)
 
     def send_update(self, client=None):
         #self.tx_queue.sync_q.put({'type': 'test', 'tick': self.tick})
@@ -493,11 +554,18 @@ class Game:
 
         if self.clients.count(include_pending=True) >= MAP["max_players"]:
             self.full = True
+        if self.clients.count(include_pending=True) == 1:
+            self.current_player = client
 
         return client
 
     def leave(self, client_id):
-        client = self.clients.get(client_id)
+        try:
+            if self.current_player.id == client_id:
+                self.next_turn()  # give turn to next player if current leaves
+            client = self.clients.get(client_id)
+        except:
+            return
         client.disconnected = True
         obj_id = client.obj_id
         self.objects.delete(obj_id)
@@ -517,6 +585,7 @@ class Game:
 
     def get_game_state(self):
         game_state = {}
+        game_state['current_player'] = self.current_player.id
         objects = {}
 
         for obj_id, obj in self.objects.all():
@@ -692,7 +761,7 @@ class GameServer:
                     await client.socket.send(message)
                 except websockets.ConnectionClosed:
                     print("Lost client in send")
-                    room.leave(client_id)
+                    #room.leave(client_id)
 
 
 if __name__ == "__main__":

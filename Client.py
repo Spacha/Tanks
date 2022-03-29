@@ -37,7 +37,7 @@ if (WORLD_WIDTH, WORLD_HEIGHT) != MAP["world_size"]:
 
 PLAYER_SINK = 6
 
-TOTAL_AP            = 100
+MAX_AP              = 100
 MOVEMENT_AP_COST    = 20
 SHOOT_AP_COST       = 25
 
@@ -492,7 +492,6 @@ class GameObject(pm.Body):
         self.position       = Vec2d(*state['position'])
         self.angle          = float(state['angle'])
         self.direction      = Vector(state['direction'])
-        self.barrel_angle   = float(state['barrel_angle'])
         #print(f"Updated object's ({self.name}) state.")
 
 
@@ -574,8 +573,11 @@ class Tank(GameObject):
 
         self.sprite = TankSprite(model)
 
+        # MULTIPLAYER - CLIENT
         self.owned_by_player = False                    # MULTIPLAYER: whether this belongs to the current player
         self.owner_id = None                            # MULTIPLAYER: which client this object belongs to
+        self.action_points = 0.0
+        self.has_turn = False
 
     def initialize(self):
         super().initialize()
@@ -612,6 +614,42 @@ class Tank(GameObject):
         #scr.blit(self.sprite.surface, sprite_rect)
         hud.blit(self.name_text, name_text_rect)
 
+        # draw "no action points" notification
+        if self.owned_by_player:
+
+            # Draw 'action bar indicator'
+
+            color = pg.Color('green')
+            if self.action_points <= SHOOT_AP_COST:
+                color = pg.Color('red')
+            elif self.action_points <= SHOOT_AP_COST + 10:
+                color = pg.Color('orange')
+            pg.draw.rect(hud, color, pg.Rect(12, HEIGHT - 38, self.action_points * 2 - 4, 20 - 4))
+            # action bar frame
+            pg.draw.rect(hud, pg.Color('white'), pg.Rect(10, HEIGHT - 40, MAX_AP * 2, 20), 1)
+            # shoot indicator
+            pg.draw.line(hud, pg.Color('white'), (9 + SHOOT_AP_COST * 2, HEIGHT - 39), (9 + SHOOT_AP_COST * 2, HEIGHT - 22))
+
+            if self.has_turn:
+                if self.action_points <= 0:
+                    #t1 = bigfont.render(f"End of action points!", True, pg.Color('white'))
+                    #t2 = font.render(f"Press [TAB] to end turn.", True, pg.Color('black'))
+                    hud_font = pg.font.SysFont("segoeui", 18)   # !!!!
+                    hud_font_big = pg.font.SysFont("segoeui", 28)   # !!!!
+                    t1 = hud_font_big.render(f"End of action points!", True, pg.Color('white'))
+                    t2 = hud_font.render(f"Press [TAB] to end turn.", True, pg.Color('black'))
+
+                    pg.draw.rect(hud, (175,28,0), pg.Rect( 0, 40, WIDTH, 90 ))
+                    pg.draw.line(hud, (120,18,0), (0, 40), (WIDTH, 40))
+                    pg.draw.line(hud, (120,18,0), (0, 40 + 90), (WIDTH, 40 + 90))
+                    hud.blit(t1, t1.get_rect(center=(WIDTH / 2, 63)))
+                    hud.blit(t2, t2.get_rect(center=(WIDTH / 2, 63 + 44)))
+            else:
+                hud_font = pg.font.SysFont("segoeui", 18)   # !!!!
+                t = hud_font.render(f"Wait for your turn...", True, pg.Color('white'))
+                pg.draw.rect(hud, (175,28,0), t.get_rect(center=(WIDTH / 2, 63 + 44)).inflate(16,8))
+                hud.blit(t, t.get_rect(center=(WIDTH / 2, 63 + 44)))
+
         #update_rects += [self.sprite.rect.move(self.prev_position), sprite_rect, name_text_rect]
 
     def tick(self):
@@ -619,6 +657,16 @@ class Tank(GameObject):
         self.barrel_angle_changed = self.barrel_angle != self.prev_barrel_angle
         # update previous...
         self.prev_barrel_angle = self.barrel_angle
+
+    #----------------------------------
+    #   MULTIPLAYER-SPECIFIC
+    #----------------------------------
+
+    def update_state(self, state):
+        super().update_state(state)
+        self.has_turn       = bool(state['has_turn'])
+        self.action_points  = float(state['action_points'])
+        self.barrel_angle   = float(state['barrel_angle'])
 
     def key_down(self, keys):
         # MULTIPLAYER - CLIENT.
