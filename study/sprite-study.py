@@ -429,11 +429,66 @@ class Tank(GameObject):
         if not (keys[pg.K_LEFT] or keys[pg.K_RIGHT]):
             self.velocity.x = 0
 
+class Ground:
+    def __init__(self):
+        pass
+
+    def initialize():
+        super().initialize()
+
+    def draw(self, scr):
+        """
+            Draw the original image.
+        """
+        super().draw(scr)
+        pass
+
+    def height_at(self, x):
+        """
+            Returns the ground height at given x coordinate.
+            Principle:
+                1. Check that the given coordinate lays somewhere within the ground.
+                2. The corresponding height value is available in the height map
+                   that is generated during startup.
+        """
+        x_idx = round(x - self.position.x)
+
+        # object is outside the slope, cannot collide
+        if x_idx < 0 or x_idx > (len(self.height_map) - 1):
+            return 0
+
+        # get the height value from the height map and add the ground offset value
+        return self.position.y + self.height_map[x_idx]
+
+    def img_to_map(self):
+        bitmap = np.array(self.bitmap)
+
+        # For each pixel: [0,0,0,0] => False, otherwise True
+        #bitmap = np.any(bitmap[::-1], axis=2)
+
+        # Ok, this is different:
+        # last element of each pixel value (= alpha) > 20 => True
+        bitmap = bitmap[:,:,-1] > 20
+
+        # initialize an empty array for the final height map
+        self.height_map = np.zeros(bitmap.shape[1], dtype=int)
+        for x, col in enumerate(bitmap.T):
+            for y, is_ground in enumerate(col): # 
+
+                # First ground pixel found (=surface)! Save the location
+                # to the 'height map' and move to the next column.
+                if is_ground:
+                    self.height_map[x] = int(y)
+                    break
+
 
 if __name__ == '__main__':
     game = Game((WIDTH, HEIGHT), FPS)
     player_tank = Tank("Me", (50,50))
     player_tank.set_as_player()
     game.add_obj(player_tank)
+
+    map = Ground()
+    game.add_obj(map)
 
     game.run()
