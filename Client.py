@@ -6,7 +6,7 @@ from pygame.math import Vector2 as Vector
 import janus
 import random
 
-from math import degrees, radians, pi as PI
+from math import degrees, radians, pi as PI, sin, cos
 
 import pymunk as pm
 import pymunk.autogeometry
@@ -383,6 +383,11 @@ class Game:
                                 obj.owner_id = obj_state['owner_id']
                                 obj.owned_by_player = obj_state['owner_id'] == self.client_id
                                 obj.update_state(obj_state)
+                            elif obj_state['class'] == 'Projectile':
+                                obj = Projectile(obj_state['position'])
+                                obj.owner_id = obj_state['owner_id']
+                                obj.owned_by_player = obj_state['owner_id'] == self.client_id
+                                obj.update_state(obj_state)
                             else:
                                 raise Exception("Unknown class received!")
 
@@ -393,13 +398,12 @@ class Game:
                             obj.update_state(obj_state)
 
                 if 'map_update' in state:
-                    print("MUPDATE!")
-                    for utype, upos in state['map_update']:
+                    for utype, udata in state['map_update']:
                         if utype == 'CIRCLE':
-                            #pg.draw.circle(self.terrain_surface, pg.Color('magenta'), upos, 60)
-                            update_surf = pg.Surface((2*60, 2*60), flags=pg.SRCALPHA)
+                            upos, urad = udata
+                            update_surf = pg.Surface((2*urad, 2*urad), flags=pg.SRCALPHA)
                             update_surf.fill(pg.Color('white'))
-                            pg.draw.circle( update_surf, (0,0,0,0), (60,60), 60)
+                            pg.draw.circle( update_surf, (0,0,0,0), (urad,urad), urad)
                             self.terrain_surface.blit( update_surf, update_surf.get_rect(center=(upos)), special_flags=pg.BLEND_RGBA_MULT )
 
 
@@ -464,7 +468,7 @@ class GameObject(pm.Body):
         #print(f"Updated object's ({self.name}) state.")
 
 
-class TankSprite:  # TODO: use pg.Sprite as a base!
+class TankSprite:  # TODO: use pg.Sprite as a base! 
     DIR_LEFT = GameObject.DIR_LEFT
     DIR_RIGHT = GameObject.DIR_RIGHT
 
@@ -645,6 +649,37 @@ class Tank(GameObject):
         # MULTIPLAYER - CLIENT.
         pass
 
+class Projectile(GameObject):
+    def __init__(self, position, model=None):
+        mass = 25
+        moment = pm.moment_for_circle(mass, 0, 5)
+        super().__init__(mass, moment=moment)
+        self.position = Vec2d(*position)
+        self.owner_id = None
+        self.exploded = False
+
+    def initialize(self):
+        super().initialize()
+        # MULTIPLAYER - SERVER.
+
+    def update(self, delta):
+        super().update(delta)
+
+    def draw(self, scr, hud):
+        super().draw(scr, hud)
+        # MULTIPLAYER - NOT IN SERVER.
+        pg.draw.circle(scr, pg.Color('yellow'), self.position, 5)
+
+        if self.exploded:
+            pg.draw.circle(scr, pg.Color('white'), self.position, 30)
+
+    #----------------------------------
+    #   MULTIPLAYER-SPECIFIC
+    #----------------------------------
+
+    def update_state(self, state):
+        super().update_state(state)
+        self.exploded = bool(state['exploded'])
 
 class GameClient:
     def __init__(self, host, port):

@@ -12,7 +12,7 @@ from contextlib import suppress
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 import pygame as pg
 from pygame.math import Vector2 as Vector
-from math import pi as PI
+from math import pi as PI, sin, cos, degrees, radians
 import janus
 import random
 
@@ -117,6 +117,8 @@ class GameObject(pm.Body):
         self.prev_direction = self.direction
         self.direction_changed = True
 
+        self.game = None  # this is only used in shooting (should avoid using)
+
     def initialize(self):
         pass
 
@@ -183,6 +185,7 @@ class Tank(GameObject):
 
         # MULTIPLAYER - SERVER
         self.sprite_model = model
+        self.barrel_pos = Vector(25, 24) + (2,2)
         #self.sprite = TankSprite(model)
 
         # MULTIPLAYER - SERVER
@@ -264,6 +267,8 @@ class Tank(GameObject):
             if self.fallen_over and self.action_points >= RESET_AP_COST:
                 self.reset_angle = True
 
+        if pg.K_SPACE in released:
+            self.shoot()
         if pg.K_UP in released or pg.K_DOWN in released:
             self.barrel_angle_rate = 0
         if pg.K_LEFT in released or pg.K_RIGHT in released:
@@ -273,6 +278,18 @@ class Tank(GameObject):
     #----------------------------------
     #   MULTIPLAYER-SPECIFIC
     #----------------------------------
+
+    def shoot(self):
+        if self.action_points >= SHOOT_AP_COST:
+            self.action_points -= SHOOT_AP_COST
+            barrel_dir_vect = Vec2d(self.direction.x * cos(radians(self.barrel_angle) - self.angle), -sin(radians(self.barrel_angle) - self.angle))
+            #projectile = Projectile(self.position + 50 * barrel_dir_vect)
+            projectile = Projectile(self.position + 18 * barrel_dir_vect)
+            #projectile.apply_impulse_at_local_point(self.driving_direction * self.rotation_vector * 50000, (0, 0))
+            projectile.velocity = 1000 * barrel_dir_vect
+
+            self.game.add_obj(projectile)
+            self.game.space.add(projectile, projectile.shape)
 
     def start_turn(self):
         self.turn_ended = False
@@ -310,6 +327,65 @@ class Tank(GameObject):
             'action_points':        float(self.action_points),
             'barrel_angle':         self.barrel_angle
             #'barrel_angle_rate':    self.barrel_angle_rate
+        } | super_state
+
+class Projectile(GameObject):
+    def __init__(self, position, model=None):
+        mass = 25
+        moment = pm.moment_for_circle(mass, 0, 5)
+        super().__init__(mass, moment=moment)
+        self.position = Vec2d(*position)
+        self.shape = pm.Circle(self, 5)
+        self.owner_id = None
+        self.exploded = False
+
+    def initialize(self):
+        super().initialize()
+        # MULTIPLAYER - SERVER.
+
+    def update(self, delta, space):
+        super().update(delta)
+
+        if self.exploded:
+            return
+
+        # TODO: Check collisions --> explode
+        self.collides = False
+        for s in space.shapes:
+            if self.shape.shapes_collide(s).points:
+                if s is self.shape:
+                    continue
+                self.collides = True
+                break
+
+        if self.collides:
+            self.explode()
+
+    def draw(self, scr, hud):
+        super().draw(scr, hud)
+        # MULTIPLAYER - NOT IN SERVER.
+        pg.draw.circle(scr, pg.Color('yellow'), self.position, 5)
+
+    def explode(self):
+        # TODO: Not always need to update the map (explosion over ground etc)!
+        self.game.erase_map_circle(self.position, 30)
+        self.game.delete_obj(self.id)
+        self.exploded = True
+        # TODO: check players and damage them
+
+    #----------------------------------
+    #   MULTIPLAYER-SPECIFIC
+    #----------------------------------
+
+    def get_state(self):
+        super_state = super().get_state()
+        return {
+            # mostly static
+            'class':                'Projectile',
+            'id':                   self.id,
+            'owner_id':             self.owner_id,
+            #'model':                'CIRCLE-5'
+            'exploded':             self.exploded
         } | super_state
         
 
@@ -495,12 +571,6 @@ class Game:
                         key = event['value']
                         player.key_up([key])
 
-                        # TEST:
-                        if key == pg.K_SPACE:
-                            pg.draw.circle(self.terrain_surface, pg.Color('magenta'), (380, 660), 60)
-                            generate_geometry(self.terrain_surface, self.space)
-                            self.TEST_map_updates.append(('CIRCLE', (380, 660)))
-
         if self.clients.count() > 0:
             if self.objects.get(self.current_player.obj_id).turn_ended:
                 self.next_turn()
@@ -551,12 +621,22 @@ class Game:
     def add_obj(self, obj):
         obj_id = self.objects.add(obj)
         obj.id = obj_id
+        obj.game = self
         # if already running, initialize immediately
         if self.running:
             obj.initialize()
 
     def delete_obj(self, obj_id):
         self.objects.delete(obj_id)
+
+    def erase_map_circle(self, pos, radius):
+        """
+        Erases a circular piece of the map and updates the collision map.
+        """
+        pg.draw.circle(self.terrain_surface, pg.Color('magenta'), pos, radius)
+        generate_geometry(self.terrain_surface, self.space)
+        self.TEST_map_updates.append(('CIRCLE', (pos, radius)))
+
 
     #----------------------------------
     #   MULTIPLAYER-SPECIFIC
