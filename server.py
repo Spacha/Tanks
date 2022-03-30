@@ -878,7 +878,12 @@ class GameServer:
             async for message_raw in socket:
                 message = decode_msg(message_raw)
 
-                if message['type'] == 'join':
+                if message['type'] == 'ping':
+                    # respond to ping with pong
+                    seq = message['seq'] if 'seq' in message else None
+                    await socket.send(encode_msg({'type': 'pong', 'seq': seq}))
+
+                elif message['type'] == 'join':
                     room_key = message['room']
 
                     # TODO: check client & server version compatibility

@@ -4,10 +4,12 @@ var connected = false;
 function join()
 {
 	console.log("Loaded")
-	const socket = new WebSocket('ws://localhost:8765');
+	const socket = new WebSocket('ws://192.168.1.154:8765');
 
 	window.socket = socket;
 	window.count = 0;
+
+	window.sent_ping_times = {}
 
 	let room = document.querySelector('input[name="room"]').value;
 	let player_name = document.querySelector('input[name="name"]').value;
@@ -25,6 +27,19 @@ function join()
 	socket.addEventListener('message', function (event) {
 		//console.log('Message from server ', event.data);
 		window.count++;
+
+		msg = decode_msg(event.data)
+		if(msg['type'] == 'pong')
+		{
+			seq = msg['seq']
+			console.log(window.sent_ping_times)
+			if (seq in window.sent_ping_times)
+			{
+				console.log("Ping: " + (performance.now() - window.sent_ping_times[seq]) + " ms.")
+				delete window.sent_ping_times[seq]
+			}
+
+		}
 	});
 	
 	window.addEventListener('beforeunload', () => {
@@ -34,21 +49,22 @@ function join()
 	console.log("LOADED")
 	connected = true;
 	
+	/*
 	setInterval(() => {
 		console.log("Ticks per second: " + count);
 		document.querySelector('span[id="ticks-per-second"]').innerHTML = count;
 		window.count = 0;
 	}, 1000)
-	/*
+	*/
 	let count = 0;
 	setInterval(() => {
-		count = count+1
+		count = count + 1
+		window.sent_ping_times[count] = performance.now()
 		socket.send(encode_msg({
 			type: 'ping',
 			seq: count,
 		}))
 	}, 500)
-	*/
 }
 
 function disconnect() { 

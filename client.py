@@ -296,8 +296,8 @@ class Game:
         self.send_event(self.update_event)
 
     def draw(self):
-        #self.main_layer.fill((112, 197, 255))
-        self.main_layer.blit(self.background_sprite, (0,0))
+        self.main_layer.fill((112, 197, 255))
+        #self.main_layer.blit(self.background_sprite, (0,0))
         #self.world_hud_layer.fill(0)
         self.hud_layer.fill(0)
 
