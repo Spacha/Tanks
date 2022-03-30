@@ -24,6 +24,17 @@ from pymunk import BB
 
 from random import randint
 
+################################################################################
+# SERVER (HOST) ADDRESS (localhost, 192.168.1.14, ...)
+################################################################################
+SERVER_ADDR = 'localhost'
+################################################################################
+# SERVER (HOST) PORT (default 8765)
+################################################################################
+SERVER_PORT = 8765
+################################################################################
+
+
 def encode_msg(msg):
     return json.dumps(msg, ensure_ascii=False)
 def decode_msg(text):
@@ -31,15 +42,15 @@ def decode_msg(text):
 
 MAPS = [{
     "world_size": (1200, 900),
-    "terrain_file": "study/img/map-cave.png",
-    "background_file": "study/img/background_sky.png",
+    "terrain_file": "img/map-cave.png",
+    "background_file": "img/background_sky.png",
     "max_players": 2,
     "start_positions": [(90, 540), (1110, 540), (550, 230)],
     "start_directions": [Vector(1, 0), -Vector(1, 0), Vector(1, 0)]
 }, {
     "world_size": (1200, 900),
-    "terrain_file": "study/img/map-obstacle-course.png",
-    "background_file": "study/img/background_sky.png",
+    "terrain_file": "img/map-obstacle-course.png",
+    "background_file": "img/background_sky.png",
     "max_players": 1,
     "start_positions": [(90, 540)],
     "start_directions": [Vector(1, 0)]
@@ -955,6 +966,5 @@ class GameServer:
 
 
 if __name__ == "__main__":
-    #server = GameServer('localhost', 8765)
-    server = GameServer('192.168.1.154', 8765)
+    server = GameServer(SERVER_ADDR, SERVER_PORT)
     server.run()

@@ -14,6 +14,17 @@ import pymunk.pygame_util
 from pymunk.vec2d import Vec2d
 from pymunk import BB
 
+################################################################################
+# SERVER (HOST) ADDRESS (localhost, 192.168.1.14, ...)
+################################################################################
+SERVER_ADDR = 'localhost'
+################################################################################
+# SERVER (HOST) PORT (default 8765)
+################################################################################
+SERVER_PORT = 8765
+################################################################################
+
+
 def encode_msg(msg):
     return json.dumps(msg, ensure_ascii=False)
 def decode_msg(text):
@@ -21,15 +32,15 @@ def decode_msg(text):
 
 MAPS = [{
     "world_size": (1200, 900),
-    "terrain_file": "study/img/map-cave.png",
-    "background_file": "study/img/background-sky.png",
+    "terrain_file": "img/map-cave.png",
+    "background_file": "img/background-sky.png",
     "max_players": 2,
     "start_positions": [(90, 540), (1110, 540), (550, 230)],
     "start_directions": [Vector(1, 0), -Vector(1, 0), Vector(1, 0)]
 }, {
     "world_size": (1200, 900),
-    "terrain_file": "study/img/map-obstacle-course.png",
-    "background_file": "study/img/background-sky.png",
+    "terrain_file": "img/map-obstacle-course.png",
+    "background_file": "img/background-sky.png",
     "max_players": 1,
     "start_positions": [(90, 540)],
     "start_directions": [Vector(1, 0)]
@@ -214,12 +225,14 @@ class Game:
         self.objects = ObjectContainer()        # replicated server objects
         self.local_objects = ObjectContainer()  # local, non-public objects
 
+        self.my_tank = None
+
 
     def initialize(self):
         self.terrain_surface = pg.Surface((WORLD_WIDTH, WORLD_HEIGHT), flags=pg.SRCALPHA)
 
         self.map_sprite = pg.image.load(MAP["terrain_file"])
-        self.background_sprite = pg.image.load(MAP["background_file"])
+        #self.background_sprite = pg.image.load(MAP["background_file"])
         map_rect = self.map_sprite.get_rect(bottomleft=(0, WORLD_HEIGHT))
         self.terrain_surface.blit(self.map_sprite, map_rect)
 
@@ -229,7 +242,9 @@ class Game:
 
         # render static HUD elements
         self.room_name_text = self.hud_font.render(f"Room: {self.room_key}", True, pg.Color('white'))
-        self.room_name_text_rect = self.room_name_text.get_rect().move(5,0)
+        self.room_name_text_rect = self.room_name_text.get_rect().move(5,25)
+        self.help_text = self.hud_font.render(f"[LEFT, RIGHT]: Move, [UP, DOWN]: Move barrel, [SPACE]: Shoot, [TAB]: End turn, [R]: Reset tipped over tank, [Q]: Quit.", True, pg.Color('white'))
+        self.help_text_rect = self.room_name_text.get_rect().move(5,0)
 
         self.wait_for_join()
         self.running = True
@@ -319,6 +334,7 @@ class Game:
         #self.scr_update_rects = []  # empty update list?
 
     def draw_hud(self, scr):
+        scr.blit(self.help_text, self.help_text_rect)
         scr.blit(self.room_name_text, self.room_name_text_rect)
         #update_rects.append(self.room_name_text_rect)
 
@@ -409,6 +425,10 @@ class Game:
                             obj = self.objects.get(obj_id)
                             obj.update_state(obj_state)
 
+                        # save the user's tank for easier access
+                        if hasattr(obj, 'owner_id') and obj.owner_id == self.client_id:
+                            self.my_tank = obj
+
                 if 'map_update' in state:
                     for utype, udata in state['map_update']:
                         if utype == 'CIRCLE':
@@ -493,8 +513,8 @@ class TankSprite:  # TODO: use pg.Sprite as a base!
         self._initialize()
 
     def _initialize(self):
-        base_path = os.path.join('study', 'img', f"{self.model}_base.png")
-        barrel_path = os.path.join('study', 'img', f"{self.model}_barrel.png")
+        base_path = os.path.join('img', f"{self.model}_base.png")
+        barrel_path = os.path.join('img', f"{self.model}_barrel.png")
         # preserve the originals for re-blit
         self.sprite_right_original = pg.image.load(base_path)
         self.barrel_sprite_original = pg.image.load(barrel_path)
@@ -616,6 +636,8 @@ class Tank(GameObject):
 
         # draw "no action points" notification
         if self.owned_by_player:
+            hud_font = pg.font.SysFont("segoeui", 18)   # !!!!
+            hud_font_big = pg.font.SysFont("segoeui", 28)   # !!!!
 
             # Draw 'action points bar'
 
@@ -624,16 +646,19 @@ class Tank(GameObject):
                 color = pg.Color('red')
             elif self.action_points <= SHOOT_AP_COST + 10:
                 color = pg.Color('orange')
+
             pg.draw.rect(hud, color, pg.Rect(12, HEIGHT - 38, self.action_points * 2 - 4, 20 - 4))
             # action bar frame
             pg.draw.rect(hud, pg.Color('white'), pg.Rect(10, HEIGHT - 40, MAX_AP * 2, 20), 1)
             # shoot indicator
             pg.draw.line(hud, pg.Color('white'), (9 + SHOOT_AP_COST * 2, HEIGHT - 39), (9 + SHOOT_AP_COST * 2, HEIGHT - 22))
 
+            if self.action_points < SHOOT_AP_COST:
+                t = hud_font.render(f"Not enough AP to shoot", True, pg.Color('white'))
+                hud.blit(t, t.get_rect(bottomleft=(12, HEIGHT - 42)))
+
             if self.has_turn:
                 if self.action_points <= 0:
-                    hud_font = pg.font.SysFont("segoeui", 18)   # !!!!
-                    hud_font_big = pg.font.SysFont("segoeui", 28)   # !!!!
                     t1 = hud_font_big.render(f"End of action points!", True, pg.Color('white'))
                     t2 = hud_font.render(f"Press [TAB] to end turn.", True, pg.Color('black'))
 
@@ -643,16 +668,13 @@ class Tank(GameObject):
                     hud.blit(t1, t1.get_rect(center=(WIDTH / 2, 63)))
                     hud.blit(t2, t2.get_rect(center=(WIDTH / 2, 63 + 44)))
             else:
-                hud_font = pg.font.SysFont("segoeui", 18)   # !!!!
                 t = hud_font.render(f"Wait for your turn...", True, pg.Color('white'))
                 pg.draw.rect(hud, (175,28,0), t.get_rect(center=(WIDTH / 2, 63 + 44)).inflate(16,8))
                 hud.blit(t, t.get_rect(center=(WIDTH / 2, 63 + 44)))
 
             if self.has_lost:
-                hud_font = pg.font.SysFont("segoeui", 18)   # !!!!
-                hud_font_big = pg.font.SysFont("segoeui", 28)   # !!!!
                 t1 = hud_font_big.render(f"You lost!", True, pg.Color('white'))
-                t2 = hud_font.render(f"Press [q] to quit.", True, pg.Color('black'))
+                t2 = hud_font.render(f"Press [Q] to quit.", True, pg.Color('black'))
 
                 pg.draw.rect(hud, (175,28,0), pg.Rect( 0, 40, WIDTH, 90 ))
                 pg.draw.line(hud, (120,18,0), (0, 40), (WIDTH, 40))
@@ -892,20 +914,6 @@ if __name__ == "__main__":
     if len(room_key) == 0 or len(room_key) == 0:
         print("Invalid nickname or room!")
     else:
-        #room_key = "test-room"
-        #player_name = "Spacha"
-
-        #client = GameClient('localhost', 8765)
-        client = GameClient('192.168.1.154', 8765)
+        client = GameClient(SERVER_ADDR, SERVER_PORT)
         client.set_connection_info(room_key, player_name)
         client.run()
-
-'''
-if __name__ == '__main__':
-    game = Game((640, 320), 200)
-    player_tank = Tank("Me", (50,50))
-    player_tank.set_as_player()
-    game.add_obj(player_tank)
-
-    game.run()
-'''
