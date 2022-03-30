@@ -41,4 +41,6 @@ $ python client.py
 
 The game is very simple. The figure below shows the controls and mechanics of the game.
 
+Action points limit movement, shooting and other actions per turn an is reset in the beginning of a new turn.
+
 <img src="docs/guide.png" alt="Guide to the game mechanics." />
