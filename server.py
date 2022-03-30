@@ -239,7 +239,8 @@ class Tank(GameObject):
         elif self.barrel_angle > self.barrel_angle_max:
             self.barrel_angle = self.barrel_angle_max
 
-        self.fallen_over = PI/2 <= self.angle <= 3/2*PI
+        # if the roof is pointing to ground even slightly
+        self.fallen_over = sin(self.angle + PI / 2) < 0
 
         self.on_ground = False
         if not self.fallen_over:
@@ -442,6 +443,10 @@ class Projectile(GameObject):
                     s.body.take_damage(explosion_effect / 3)  # direct hit is about 30 % of HP
 
         self.game.delete_obj(self.id)
+        try:  # remove if exists
+            self.game.space.remove(self.shape)
+        except:
+            pass
         self.exploded = True
         # TODO: check players and damage them
 
